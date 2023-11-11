@@ -1,6 +1,6 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
-
+import os
 from os.path import abspath, dirname, join
 from subprocess import check_output
 from codecs import getdecoder
@@ -21,8 +21,15 @@ def run_ltl2dra(formula):
     current_dirname = dirname(__file__)
     # ltl2dra_dir = join(current_dirname, 'ltl2dstar')
     # ltl2ba_dir = join(current_dirname, 'ltl2ba')
-    ltl2dra_dir = "/Users/piayu/Downloads/ltl2dstar-0.5.4/src/ltl2dstar"
-    ltl2ba_dir = "/Users/piayu/Downloads/ltl2ba-1.3/ltl2ba"
+    if 'sheng' in os.getcwd():
+        ltl2dra_dir = "/Users/shengsheng/Downloads/github/CF_POMDP/ltl2dstar-0.5.4/src/ltl2dstar"
+        ltl2ba_dir = "/Users/shengsheng/Downloads/github/CF_POMDP/ltl2ba-1.3/ltl2ba"
+    elif 'ss7dr' in os.getcwd():
+        ltl2dra_dir = "/u/ss7dr/Github/CF_POMDP/ltl2dstar-0.5.4/src/ltl2dstar"
+        ltl2ba_dir = "/u/ss7dr/Github/CF_POMDP/ltl2ba-1.3/ltl2ba"
+    else:
+        ltl2dra_dir = "/Users/piayu/Downloads/ltl2dstar-0.5.4/src/ltl2dstar"
+        ltl2ba_dir = "/Users/piayu/Downloads/ltl2ba-1.3/ltl2ba"
     print(ltl2dra_dir)
     cmd = "echo \"%s\"" % formula + " | " + "%s " % ltl2dra_dir + \
         "--ltl2nba=spin:%s --stutter=no - -" % ltl2ba_dir

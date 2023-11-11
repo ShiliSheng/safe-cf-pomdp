@@ -56,7 +56,19 @@ class OmegaAutomaton:
         # Translate the LTL formula to an automaton using Rabinizer 4.
         
         #out=check_output(['ltl2ldba', '-d', '-e', ltl] if self.auto_type == 'ldba' else ['ltl2dra', '-c', ltl])
-        out=check_output(['/Users/piayu/Downloads/rabinizer4/bin/ltl2ldba', '-d', '-e', ltl] if self.auto_type == 'ldba' else ['/Users/piayu/Downloads/rabinizer4/bin/ltl2dra', '-c', ltl])
+        
+        if 'sheng' in os.getcwd():
+            ltl2dra_dir = "/Users/shengsheng/Downloads/github/CF_POMDP/ltl2dstar-0.5.4/src/ltl2dstar"
+            ltl2ba_dir = "/Users/shengsheng/Downloads/github/CF_POMDP/ltl2ba-1.3/ltl2ba"
+        elif 'ss7dr' in os.getcwd():
+            ltl2dra_dir = "/u/ss7dr/Github/CF_POMDP/ltl2dstar-0.5.4/src/ltl2dstar"
+            ltl2ba_dir = "/u/ss7dr/Github/CF_POMDP/ltl2ba-1.3/ltl2ba"
+        else:
+            ltl2dra_dir = '/Users/piayu/Downloads/rabinizer4/bin/ltl2ldba'
+            ltl2ba_dir = '/Users/piayu/Downloads/rabinizer4/bin/ltl2dra'
+
+        out=check_output([ltl2ba_dir, '-d', '-e', ltl] if self.auto_type == 'ldba' else [ltl2dra_dir, '-c', ltl])
+
         # Split the output into two parts: the header and the body
         header, body = out.decode('utf-8').split('--BODY--\n')
 
