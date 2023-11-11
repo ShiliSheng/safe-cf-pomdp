@@ -213,7 +213,7 @@ for fnode in prod_nodes_list:
     for act in U:
         succ_set = dict()
         for tnode in prod_dra.successors(fnode): 
-            tnode_set_dict = robot_state_action_map[(fnode[0], act)]     
+            tnode_set_dict = robot_state_action_map[(fnode[0], act)]
             if tnode[0] in tnode_set_dict.keys():
                 prob = tnode_set_dict[tnode[0]]
                 tnode_dict = {tnode: prob}
