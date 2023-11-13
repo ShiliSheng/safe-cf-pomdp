@@ -102,7 +102,7 @@ class POMCPNode:
 
 
 class POMCP:
-    def __init__(self, actions, robot_state_action_map, state_to_observation):
+    def __init__(self, actions, robot_state_action_map, state_to_observation, state_action_reward_map):
         #e (float): Threshold value below which the expected sum of discounted rewards for the POMDP is considered 0. Default value is 0.005.
         # c (float): Parameter that controls the importance of exploration in the UCB heuristic. Default value is 1.
         # no_particles (int): Controls the maximum number of particles that will be kept at each node 
@@ -137,6 +137,7 @@ class POMCP:
         self.shiledLevel = 0
 
         self.robot_state_action_map = robot_state_action_map
+        self.state_action_reward_map = state_action_reward_map
         self.state_to_observation = state_to_observation
 
         self.initialUCB(10000, 100)
