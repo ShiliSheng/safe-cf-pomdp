@@ -120,7 +120,7 @@ class POMCP:
         # private double [][] UCB;
         self.root = None
         self.pomdp = None
-        self.allActoins = actions
+        self.actions = actions
         self.mdpRewards = None
         self.rewardFunction = None
         self.target = set()
@@ -138,6 +138,8 @@ class POMCP:
 
         self.robot_state_action_map = robot_state_action_map
         self.state_to_observation = state_to_observation
+
+        self.initialUCB(10000, 100)
 
         def fastUCB(self, N, n, logN):
             if N < 1000 and n < 100: return self.UCB[N][n]
@@ -337,13 +339,18 @@ class POMCP:
             return vnode
         
         def step_reward(self, state, actionIndex):
-            return -1 # TODO
+            if state not in self.state_action_reward_map:
+                return float("-inf")
+            if actionIndex not in self.state_action_reward_map[state]:
+                return float("-inf")
+            return self.state_action_reward_map[state][actionIndex]
         
         def get_state_reward(self, state):
-            return -1
+            return 0
         
         def get_random_actoin_index(self, state):
-            return 0 #TODO
+            available_action_index = self.robot_state_action_map[state].keys()
+            return random.choice(list(available_action_index))
         
         def rollout(self, state):
             total_reward = 0

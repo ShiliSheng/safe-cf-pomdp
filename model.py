@@ -20,6 +20,7 @@ class Model:
         self.robot_edges = dict()
         self.state_tra = [{} for _ in range(len(self.actions))]
         self.robot_state_action_map = {}        # (state, actionIndex) : {next_state, prob}
+        self.state_action_reward_map = {}       # (state, actionIndex) : (cost)
 
         self.init_transition()
         
@@ -38,12 +39,15 @@ class Model:
                 self.robot_edges[(fnode, u, tnode)] = (prob, c)
                 succ_prop = {tnode: prob}
                 succ_set.update(succ_prop)
-    
+
         if not succ_set:     # if no successor, stay the same state
             succ_set[fnode] = 1
         else:                # make prob sum to 1
             for tnode in succ_set:
                 succ_set[tnode] += (1 - cumulative_prob) / len(succ_set)
+
+        if fnode not in self.state_action_reward_map: self.state_action_reward_map = {}
+        self.state_action_reward_map[fnode][actionIndex] = c
 
         if fnode not in self.robot_state_action_map: self.robot_state_action_map[fnode] = {}
         self.robot_state_action_map[fnode][actionIndex] = succ_set
