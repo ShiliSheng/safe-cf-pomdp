@@ -4,6 +4,7 @@ from MDP_TG.vi4wr import syn_plan_prefix, syn_plan_prefix_dfa
 from networkx.classes.digraph import DiGraph
 import pickle
 import time
+import random 
 
 class Model:
     def __init__(self, robot_nodes, actions, cost, transition, transiton_prob, obstacles = [], base1 = [], base2 = []):
@@ -21,9 +22,9 @@ class Model:
         self.state_tra = [{} for _ in range(len(self.actions))]
         self.robot_state_action_map = {}        # (state, actionIndex) : {next_state, prob}
         self.state_action_reward_map = {}       # (state, actionIndex) : (cost)
-
         self.init_transition()
-        
+        self.dra = None
+
     def set_transition_prob(self, fnode, actionIndex):
         u = self.actions[actionIndex]
         c = self.cost[actionIndex]
@@ -46,7 +47,7 @@ class Model:
             for tnode in succ_set:
                 succ_set[tnode] += (1 - cumulative_prob) / len(succ_set)
 
-        if fnode not in self.state_action_reward_map: self.state_action_reward_map = {}
+        if fnode not in self.state_action_reward_map: self.state_action_reward_map[fnode] = {}
         self.state_action_reward_map[fnode][actionIndex] = c
 
         if fnode not in self.robot_state_action_map: self.robot_state_action_map[fnode] = {}
@@ -95,6 +96,8 @@ class Model:
         all_base = '& F base1 & F base2 G ! obstacle'
         # all_base= '(F G base1) & (G ! obstacle)'
         dra = Dra(all_base)
+        self.dra = dra
+
         t3 = time.time()
         print('DRA done, time: %s' % str(t3-t2))
 
@@ -228,6 +231,8 @@ class Model:
                     support_obs_WS.add(obs_WS)
             state_observation_map[fnode] = support_obs
             state_observation_map_WS[fnode] = support_obs_WS
+
+        self.state_observation_map = state_observation_map
         #----
 
         file_dot = open('state_observation.dot', 'w')
@@ -240,6 +245,8 @@ class Model:
                 file_dot.write('"'+str(node)+'"' +
                                 '->' + '"' + str(support_obs_WS) + '"' + ';\n')
             node_visited.add(node)
+        self.state_observation_map_WS = state_observation_map_WS
+
         file_dot.write('}\n')
         file_dot.close()
         print("-------observation_state.dot generated-------")
@@ -322,6 +329,7 @@ class Model:
         with open('pickle_data/observation_nodes_reachable.pkl', 'wb') as pickle_file:
             pickle.dump(obs_nodes_reachable, pickle_file)
         #----
+        self.observation_nodes_reachable = obs_nodes_reachable
 
         obs_edges = dict()
         for fnode, prop in obs_nodes_reachable.items():
@@ -386,6 +394,7 @@ class Model:
         aps = ['obstacle', 'target']
         acc = [[{2}]]
         dfa = Dfa(statenum, init, edges, aps, acc)
+        self.dfa = dfa
         print('DFA done.')
 
         #----
@@ -618,12 +627,136 @@ class Model:
 
         with open('pickle_data/winning_observation.pkl', 'wb') as file:
             pickle.dump(AccStates_obs, file)
+        self.winning_observation = AccStates_obs
 
         f_accept_observation = open('data/accept_observation.dat','w')
         for nd_id, nd in enumerate(AccStates_obs):
             # ts_node_id, ts_node_x, ts_node_y, ts_node_d
             f_accept_observation.write('%s,%s,%s\n' %(nd[0], nd[1], nd[2]))
         f_accept_observation.close()
+
+##########
+    def get_observation_from_belief(self, support_belief = []): # TODO @piany to review
+        # ret observation = (((ox, oy, oc), dra_state), label, dfa_state)
+        # how to get observation from belief support if dra is not always the same
+        # return (((6, 6, 1), 1), frozenset(), 2)
+        new_obs = set()
+        for support in support_belief:
+            # ((x, y, oc), dra_state), label, dfa_state = support
+            (stateWS_time, dra_state), label, dfa_state = support
+            state_WS, oc = stateWS_time[:-1], stateWS_time[-1]
+            state = state_WS, label, dra_state
+            for obsWS in self.state_observation_map_WS[state]:
+                obsWS_time = (*obsWS, oc)
+                new_obs.add(((obsWS_time, dra_state), label, dfa_state))
+                # new_obs.add((((ox, oy, oc), odra), label, dfa_state)) is it the same ?
+        observation = list(new_obs)[0]
+        print("observation", observation)
+        return observation
+
+    # def get_next_possible_states(self, stateWS, actionIndex):
+    #     if stateWS not in self.robot_state_action_map or actionIndex not in self.robot_state_action_map[stateWS]:
+    #         print("erorr")
+    #         return set()
+    #     return self.robot_state_action_map[stateWS][actionIndex]
+
+    # def get_next_belief_support(self, support_belief = [], actionIndex = -1):
+    #     return
+        # # b, a, o => b'
+        # next_support_beleif = set()
+        # for key in support_belief:
+        #     # ((x, y, oc), dra_state), label, dfa_state = key
+        #     (stateWS_time, dra_state), label, dfa_state = key
+        #     stateWS, oc = stateWS_time[:-1], stateWS_time[-1]
+        #     # next_possible_states = self.get_next_possible_states(stateWS, actionIndex)
+        #     next_support_beleif.add(next_state)
+        # return list(next_support_beleif)
+
+    def step(self, state, actionIndex):
+            probabilities = self.robot_state_action_map[state][actionIndex]
+            states, probs = zip(*probabilities.items())
+            next_state = random.choices(states, weights=probs, k=1)[0]
+        return next_state
+
+    def check_winning(self, support_belief = [], actionIndex = 0, current_state = -1):
+        dra = self.dra
+        dfa = self.dfa
+
+        #----Randomly choose the last step belief state-------------
+        belief = (1/4, 1/4, 1/4, 1/4)
+
+        #---The support states and the corresponding observation are-----
+        if not support_belief:
+            # why is support belief defined as [((x, y, oc), dra_state), label, dfa_state]
+            support_belief = [(((5, 5, 1), 1), frozenset(), 2), 
+                            (((5, 7, 1), 1), frozenset(), 2),
+                            (((7, 5, 1), 1), frozenset(), 2),
+                            (((7, 7, 1), 1), frozenset(), 2),
+                            ]
+        observation = self.get_observation_from_belief(support_belief) # how to get observation of belief support
+        print(observation)
+        obs_time = observation[0][0][2]
+        obs_dra = observation[0][1]
+        obs_label = observation[1]
+        obs_dfa = observation[2]
+
+        #----Randomly choose an action---------
+        action = self.actions[actionIndex]
+
+        #----Make an observation in robot workspace------
+        # how to get next obs        
+        # next_stateWS = self.step(current_state, actionIndex)
+        # observation_WS_next = self.state_observation_map[next_stateWS]
+        observation_WS_next = (10, 6)
+        
+        ox_next = observation_WS_next[0]
+        oy_next = observation_WS_next[1]
+        oc_next = obs_time+1
+
+        #----Compute corresponding DRA and DFA states-------
+        label_dict = dict()
+        for state in support_belief:
+            fnode_WS = (state[0][0][0], state[0][0][1])
+            label_dict.update(robot_nodes[fnode_WS])
+
+        f_dra_label = set()
+        for label, prob in label_dict.items(): 
+            if label not in f_dra_label:
+                f_dra_label.add(label)
+
+        dra_next = set()
+        for label in f_dra_label:
+            for dra_node in dra.successors(obs_dra):
+                truth = dra.check_label_for_dra_edge(
+                    label, obs_dra, dra_node)
+                if truth:
+                    dra_next.add(dra_node)
+
+        label_next_dict = self.observation_nodes_reachable[((ox_next, oy_next, oc_next), 1)]
+        for l, p in label_next_dict.items():
+            label_next = l
+
+        dfa_next = None
+        for dfa_node in dfa.successors(obs_dfa):
+            truth = dfa.check_label_for_dra_edge(
+                    obs_label, obs_dfa, dfa_node)
+            if truth:
+                dfa_next = dfa_node
+                break
+
+        observation_next = set()
+        for dra in dra_next:
+            obs_next = (((ox_next, oy_next, oc_next), dra), label_next, dfa_next)
+            observation_next.add(obs_next)
+
+        print(observation_next)
+
+        #----Check winning-------
+        if observation_next.issubset(self.winning_observation):
+            print('The belief support is a winning state!')
+        else:
+            print('The belief support is a failure!')
+
 
 if __name__ == "__main__":
     U = actions = ['N', 'S', 'E', 'W', 'ST']
@@ -666,9 +799,10 @@ if __name__ == "__main__":
     all_base = '& F base1 & F base2 G ! obstacle'
 
     pomdp = Model(robot_nodes, actions, cost, transition, transition_prob, obstacle, base1, base2)
-    pomdp.display_state_transiton()
+    # pomdp.display_state_transiton()
     pomdp.compute_accepting_states(all_base)
     pomdp.compute_winning_region();
+    pomdp.check_winning();
 
     """
         # online planning
