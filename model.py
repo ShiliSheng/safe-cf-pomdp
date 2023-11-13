@@ -19,7 +19,7 @@ class Model:
         
         self.robot_edges = dict()
         self.state_tra = [{} for _ in range(len(self.actions))]
-        self.robot_state_action_map = {}
+        self.robot_state_action_map = {}        # (state, actionIndex) : {next_state, prob}
 
         self.init_transition()
         
@@ -46,7 +46,7 @@ class Model:
                 succ_set[tnode] += (1 - cumulative_prob) / len(succ_set)
 
         if fnode not in self.robot_state_action_map: self.robot_state_action_map[fnode] = {}
-        self.robot_state_action_map[fnode][u] = succ_set
+        self.robot_state_action_map[fnode][actionIndex] = succ_set
         self.state_tra[actionIndex][fnode] = succ_set
        
     def init_transition(self):
@@ -57,12 +57,13 @@ class Model:
     def display_state_transiton(self):
         print("++++++++++ state transition")
         for state in self.robot_state_action_map:
-            for u in self.actions:
-                print(state, u, self.robot_state_action_map[state][u])
+            for actionIndex in self.robot_state_action_map[state]:
+                u = self.actions[actionIndex]
+                print(state, u, self.robot_state_action_map[state][actionIndex])
         print("++++++++++")
-        for i, u in enumerate(self.actions):
-            for state in self.state_tra[i]:
-                print(state, u, self.state_tra[i][state])
+        for actionIndex, u in enumerate(self.actions):
+            for state in self.state_tra[actionIndex]:
+                print(state, u, self.state_tra[actionIndex][state])
 
     def compute_accepting_states(self, all_base):
         U = self.actions
@@ -147,11 +148,11 @@ class Model:
         #----
         prod_state_action_successor_map = dict()
         for fnode in prod_nodes_list:
-            for act in U:
+            for actionIndex, act in enumerate(self.actions):
                 succ_set = dict()
                 for tnode in prod_dra.successors(fnode): 
                     # tnode_set_dict = self.robot_state_action_map[(fnode[0], act)]
-                    tnode_set_dict = self.robot_state_action_map[fnode[0]][act]
+                    tnode_set_dict = self.robot_state_action_map[fnode[0]][actionIndex]
                     if tnode[0] in tnode_set_dict.keys():
                         prob = tnode_set_dict[tnode[0]]
                         tnode_dict = {tnode: prob}
@@ -661,6 +662,7 @@ if __name__ == "__main__":
     all_base = '& F base1 & F base2 G ! obstacle'
 
     pomdp = Model(robot_nodes, actions, cost, transition, transition_prob, obstacle, base1, base2)
+    pomdp.display_state_transiton()
     pomdp.compute_accepting_states(all_base)
     pomdp.compute_winning_region();
 
