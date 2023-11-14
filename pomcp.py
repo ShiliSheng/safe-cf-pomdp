@@ -142,10 +142,6 @@ class POMCP:
         self.state_action_reward_map = state_action_reward_map
         self.state_to_observation = state_to_observation
 
-        self.initialUCB(10000, 100)
-
-
-
         def initializePOMCP(self):
             self.TreeDepth = 0
             self.PeakTreeDepth = 0

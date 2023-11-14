@@ -765,6 +765,15 @@ class Model:
     def init_pomcp(self):
         constant = 1000
         max_depth = 200
+        initial_belief_support = [(((5, 5, 1), 1), frozenset(), 2), 
+                        (((5, 7, 1), 1), frozenset(), 2),
+                        (((7, 5, 1), 1), frozenset(), 2),
+                        (((7, 7, 1), 1), frozenset(), 2),
+                        ]
+        initial_belief = {}
+        for state in initial_belief_support:
+            initial_belief[state] = 1 / len(initial_belief_support)
+        self.initial_belief = initial_belief_support
         self.pomcp = POMCP(self.initial_belief, self.actions, self.robot_state_action_map, self.state_observation_map, 
                            self.state_action_reward_map, self.end_states, constant, max_depth)
         # PartiallyObservableMonteCarloPlanning pomcp = new PartiallyObservableMonteCarloPlanning(, , target, minMax, statesOfInterest, endStates, constant, maxDepth);
@@ -814,9 +823,10 @@ if __name__ == "__main__":
                             (((7, 5, 1), 1), frozenset(), 2),
                             (((7, 7, 1), 1), frozenset(), 2),
                             ]
+    initial_belief = {}
     for state in initial_belief_support:
-        initial_belief_support[state] = 1 / len(initial_belief_support)
-        
+        initial_belief[state] = 1 / len(initial_belief_support)
+
     pomdp = Model(robot_nodes, actions, cost, transition, transition_prob, obstacle, base1, base2, end_states)
     # pomdp.display_state_transiton()
     pomdp.compute_accepting_states(all_base)

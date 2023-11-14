@@ -27,6 +27,7 @@
 (9, 1),frozenset(),5
 (19, 3),frozenset(),5
 (3, 9),frozenset(),5
+(19, 1),frozenset({'base2'}),5
 (11, 15),frozenset(),5
 (11, 11),frozenset(),5
 (1, 5),frozenset(),5
@@ -51,7 +52,6 @@
 (7, 13),frozenset(),5
 (11, 1),frozenset(),5
 (9, 11),frozenset(),5
-(19, 1),frozenset({'base2'}),5
 (5, 7),frozenset(),5
 (5, 9),frozenset(),5
 (13, 9),frozenset(),5
@@ -67,7 +67,6 @@
 (17, 9),frozenset(),5
 (11, 7),frozenset(),5
 (11, 9),frozenset(),5
-(19, 19),frozenset({'base1'}),5
 (11, 3),frozenset(),5
 (13, 3),frozenset(),5
 (13, 5),frozenset(),5
@@ -84,6 +83,7 @@
 (1, 1),frozenset(),5
 (15, 13),frozenset(),5
 (9, 19),frozenset(),5
+(19, 19),frozenset({'base1'}),5
 (7, 11),frozenset(),5
 (5, 17),frozenset(),5
 (1, 19),frozenset(),5
@@ -137,6 +137,7 @@
 (13, 19),frozenset(),4
 (3, 11),frozenset(),1
 (11, 3),frozenset(),4
+(19, 1),frozenset({'base2'}),2
 (3, 1),frozenset(),1
 (19, 13),frozenset(),4
 (9, 11),frozenset(),3
@@ -154,6 +155,7 @@
 (5, 19),frozenset(),2
 (15, 13),frozenset(),1
 (19, 9),frozenset(),1
+(19, 1),frozenset({'base2'}),4
 (3, 1),frozenset(),3
 (5, 17),frozenset(),1
 (19, 11),frozenset(),3
@@ -165,6 +167,7 @@
 (5, 19),frozenset(),4
 (15, 13),frozenset(),3
 (9, 19),frozenset(),3
+(19, 19),frozenset({'base1'}),3
 (9, 7),frozenset(),2
 (17, 17),frozenset(),1
 (1, 15),frozenset(),1
@@ -200,6 +203,7 @@
 (13, 7),frozenset(),3
 (19, 3),frozenset(),4
 (9, 15),frozenset(),3
+(19, 1),frozenset({'base2'}),1
 (11, 15),frozenset(),4
 (1, 1),frozenset(),4
 (13, 17),frozenset(),2
@@ -208,12 +212,13 @@
 (5, 7),frozenset(),2
 (5, 9),frozenset(),2
 (5, 3),frozenset(),2
-(19, 17),frozenset(),2
 (7, 15),frozenset(),4
+(19, 17),frozenset(),2
 (7, 17),frozenset(),4
 (1, 11),frozenset(),3
 (1, 9),frozenset(),2
 (17, 13),frozenset(),1
+(19, 1),frozenset({'base2'}),3
 (11, 5),frozenset(),1
 (13, 17),frozenset(),4
 (11, 1),frozenset(),4
@@ -229,6 +234,7 @@
 (1, 9),frozenset(),4
 (17, 13),frozenset(),3
 (11, 5),frozenset(),3
+(19, 19),frozenset({'base1'}),2
 (9, 19),frozenset(),2
 (15, 11),frozenset(),1
 (9, 17),frozenset(),1
@@ -239,6 +245,7 @@
 (1, 1),frozenset(),1
 (9, 19),frozenset(),4
 (5, 15),frozenset(),2
+(19, 19),frozenset({'base1'}),4
 (17, 9),frozenset(),3
 (17, 17),frozenset(),2
 (13, 3),frozenset(),3
@@ -254,10 +261,10 @@
 (3, 5),frozenset(),1
 (7, 5),frozenset(),4
 (19, 5),frozenset(),2
-(19, 7),frozenset(),2
 (5, 15),frozenset(),4
-(1, 1),frozenset(),3
+(19, 7),frozenset(),2
 (13, 17),frozenset(),1
+(1, 1),frozenset(),3
 (15, 15),frozenset(),4
 (11, 13),frozenset(),2
 (5, 7),frozenset(),1
@@ -266,8 +273,8 @@
 (19, 17),frozenset(),1
 (1, 19),frozenset(),3
 (3, 7),frozenset(),4
-(13, 7),frozenset(),4
 (13, 1),frozenset(),4
+(13, 7),frozenset(),4
 (1, 9),frozenset(),1
 (1, 17),frozenset(),2
 (9, 15),frozenset(),4
@@ -289,6 +296,7 @@
 (1, 17),frozenset(),4
 (9, 1),frozenset(),1
 (11, 5),frozenset(),2
+(19, 19),frozenset({'base1'}),1
 (9, 19),frozenset(),1
 (11, 11),frozenset(),4
 (15, 1),frozenset(),3
@@ -303,25 +311,24 @@
 (17, 11),frozenset(),1
 (5, 15),frozenset(),1
 (9, 1),frozenset(),3
-(11, 5),frozenset(),4
 (17, 9),frozenset(),2
+(11, 5),frozenset(),4
 (13, 3),frozenset(),2
 (5, 5),frozenset(),3
 (3, 19),frozenset(),2
-(19, 1),frozenset({'base2'}),1
 (3, 7),frozenset(),1
 (13, 1),frozenset(),1
 (9, 15),frozenset(),1
 (11, 19),frozenset(),4
 (3, 17),frozenset(),1
 (7, 5),frozenset(),3
-(19, 5),frozenset(),1
 (5, 15),frozenset(),3
+(19, 5),frozenset(),1
 (19, 7),frozenset(),1
 (1, 1),frozenset(),2
 (1, 7),frozenset(),3
-(17, 11),frozenset(),3
 (15, 9),frozenset(),3
+(17, 11),frozenset(),3
 (17, 9),frozenset(),4
 (13, 3),frozenset(),4
 (3, 19),frozenset(),4
@@ -330,7 +337,6 @@
 (15, 19),frozenset(),2
 (17, 19),frozenset(),4
 (9, 13),frozenset(),1
-(19, 1),frozenset({'base2'}),3
 (13, 13),frozenset(),4
 (13, 1),frozenset(),3
 (1, 17),frozenset(),1
@@ -354,7 +360,6 @@
 (7, 11),frozenset(),1
 (11, 11),frozenset(),3
 (15, 1),frozenset(),2
-(19, 19),frozenset({'base1'}),2
 (9, 3),frozenset(),3
 (5, 11),frozenset(),3
 (5, 13),frozenset(),3
@@ -370,7 +375,6 @@
 (5, 5),frozenset(),2
 (11, 9),frozenset(),4
 (3, 19),frozenset(),1
-(19, 19),frozenset({'base1'}),4
 (17, 19),frozenset(),1
 (17, 15),frozenset(),1
 (13, 13),frozenset(),1
@@ -391,7 +395,6 @@
 (17, 15),frozenset(),3
 (15, 7),frozenset(),1
 (17, 19),frozenset(),3
-(19, 1),frozenset({'base2'}),2
 (13, 13),frozenset(),3
 (3, 17),frozenset(),2
 (13, 11),frozenset(),1
@@ -404,7 +407,6 @@
 (13, 5),frozenset(),2
 (15, 19),frozenset(),3
 (15, 7),frozenset(),3
-(19, 1),frozenset({'base2'}),4
 (7, 13),frozenset(),1
 (9, 13),frozenset(),2
 (3, 15),frozenset(),2
@@ -416,7 +418,6 @@
 (19, 15),frozenset(),2
 (11, 7),frozenset(),1
 (11, 9),frozenset(),1
-(19, 19),frozenset({'base1'}),1
 (7, 11),frozenset(),2
 (9, 13),frozenset(),4
 (1, 3),frozenset(),2
@@ -437,7 +438,6 @@
 (5, 5),frozenset(),1
 (7, 11),frozenset(),4
 (11, 9),frozenset(),3
-(19, 19),frozenset({'base1'}),3
 (1, 3),frozenset(),4
 (17, 5),frozenset(),4
 (19, 13),frozenset(),3
