@@ -124,7 +124,7 @@ class POMCP:
         self.mdpRewards = None
         self.rewardFunction = None
         self.target = set()
-        self.endStates = set()
+        self.end_states = set()
 
         self.is_min = False
         self.stateOfInteste = None
@@ -290,7 +290,7 @@ class POMCP:
             delayed_reward = 0
             nextState = self.step(state, actionIndex)
             observation = self.get_observatoin(nextState)
-            done = nextState in self.endStates
+            done = nextState in self.end_states
             immediate_reward = self.step_reward(state, actionIndex)
             total_reward = 0
 
@@ -365,7 +365,7 @@ class POMCP:
                 actionIndex = self.get_random_action_index(state)
                 next_state = self.step(state, actionIndex)
                 reward = self.step_reward(state, actionIndex)
-                done = next_state in self.endStates
+                done = next_state in self.end_states
                 if self.verbose >= 4:
                     print("state", state, "action", self.actions[actionIndex], "reward", reward, "depth", numStep, "totalR", total_reward)
                 total_reward += reward * discount

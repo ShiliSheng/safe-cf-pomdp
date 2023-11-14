@@ -2,12 +2,14 @@ from MDP_TG.mdp import Motion_MDP
 from MDP_TG.dra import Dra, Dfa, Product_Dra, Product_Dfa
 from MDP_TG.vi4wr import syn_plan_prefix, syn_plan_prefix_dfa
 from networkx.classes.digraph import DiGraph
+from pomcp import POMCP
+from pomcp import POMCPNode
 import pickle
 import time
 import random 
 
 class Model:
-    def __init__(self, robot_nodes, actions, cost, transition, transiton_prob, obstacles = [], base1 = [], base2 = []):
+    def __init__(self, robot_nodes, actions, cost, transition, transiton_prob, obstacles = [], base1 = [], base2 = [], end_states = set()):
         self.t0 = time.time()
         self.robot_nodes = robot_nodes # {state: (label, prob)}
         self.actions = actions
@@ -24,6 +26,8 @@ class Model:
         self.state_action_reward_map = {}       # (state, actionIndex) : (cost)
         self.init_transition()
         self.dra = None
+        self.pomcp = None
+        self.end_states = end_states
 
     def set_transition_prob(self, fnode, actionIndex):
         u = self.actions[actionIndex]
@@ -676,7 +680,7 @@ class Model:
             probabilities = self.robot_state_action_map[state][actionIndex]
             states, probs = zip(*probabilities.items())
             next_state = random.choices(states, weights=probs, k=1)[0]
-        return next_state
+            return next_state
 
     def check_winning(self, support_belief = [], actionIndex = 0, current_state = -1):
         dra = self.dra
@@ -758,6 +762,9 @@ class Model:
             print('The belief support is a failure!')
 
 
+    def init_pomcp(self):
+        self.pomcp = POMCP(self.actions, self.robot_state_action_map, self.state_observation_map, self.state_action_reward_map, self.end_states)
+
 if __name__ == "__main__":
     U = actions = ['N', 'S', 'E', 'W', 'ST']
     C = cost = [3, 3, 3, 3, 1]
@@ -779,6 +786,7 @@ if __name__ == "__main__":
     obstacle =  [(5, 1), (7, 3), (17, 7)]
     base1 = [(19, 19)]
     base2 = [(19, 1)]
+    end_states = set([(19,1)])
 
     WS_d = 1  # ?
     WS_node_dict = dict()
@@ -798,12 +806,12 @@ if __name__ == "__main__":
 
     all_base = '& F base1 & F base2 G ! obstacle'
 
-    pomdp = Model(robot_nodes, actions, cost, transition, transition_prob, obstacle, base1, base2)
+    pomdp = Model(robot_nodes, actions, cost, transition, transition_prob, obstacle, base1, base2, end_states)
     # pomdp.display_state_transiton()
     pomdp.compute_accepting_states(all_base)
-    pomdp.compute_winning_region();
-    pomdp.check_winning();
-
+    pomdp.compute_winning_region()
+    # pomdp.check_winning()
+    pomdp.init_pomcp()
     """
         # online planning
         
