@@ -679,7 +679,7 @@ class Model:
             oc += 1
 
             # get next dfa
-            next_state = ((nx, ny oc), nxt_dra, nxt_dfa)
+            next_state = ((nx, ny, oc), nxt_dra, nxt_dfa)
             next_support_beleif.add(next_state)
         return list(next_support_beleif)
 
