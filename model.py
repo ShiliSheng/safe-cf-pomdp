@@ -658,23 +658,30 @@ class Model:
         print("observation", observation)
         return observation
 
-    # def get_next_possible_states(self, stateWS, actionIndex):
-    #     if stateWS not in self.robot_state_action_map or actionIndex not in self.robot_state_action_map[stateWS]:
-    #         print("erorr")
-    #         return set()
-    #     return self.robot_state_action_map[stateWS][actionIndex]
+    def get_next_possible_states(self, stateWS, actionIndex): #TODO
+        if stateWS not in self.robot_state_action_map or actionIndex not in self.robot_state_action_map[stateWS]:
+            print("erorr")
+            return set()
+        return self.robot_state_action_map[stateWS][actionIndex]
 
-    # def get_next_belief_support(self, support_belief = [], actionIndex = -1):
-    #     return
-        # # b, a, o => b'
-        # next_support_beleif = set()
-        # for key in support_belief:
-        #     # ((x, y, oc), dra_state), label, dfa_state = key
-        #     (stateWS_time, dra_state), label, dfa_state = key
-        #     stateWS, oc = stateWS_time[:-1], stateWS_time[-1]
-        #     # next_possible_states = self.get_next_possible_states(stateWS, actionIndex)
-        #     next_support_beleif.add(next_state)
-        # return list(next_support_beleif)
+    def get_next_belief_support(self, support_belief = [], actionIndex = -1, observation = -1): # TODO
+        # return
+        # b, a, o => b'
+        next_support_beleif = set()
+        for key in support_belief:
+            # ((x, y, oc), dra_state), label, dfa_state = key
+            (stateWS_time, dra_state), label, dfa_state = key
+            stateWS, oc = stateWS_time[:-1], stateWS_time[-1]
+            next_possible_states = self.get_next_possible_states(stateWS, actionIndex, observation)
+
+            # get next dra
+
+            oc += 1
+
+            # get next dfa
+            next_state = ((nx, ny oc), nxt_dra, nxt_dfa)
+            next_support_beleif.add(next_state)
+        return list(next_support_beleif)
 
     def step(self, state, actionIndex):
             probabilities = self.robot_state_action_map[state][actionIndex]
