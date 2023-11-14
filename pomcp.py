@@ -102,7 +102,8 @@ class POMCPNode:
 
 
 class POMCP:
-    def __init__(self, actions, robot_state_action_map, state_to_observation, state_action_reward_map):
+    def __init__(self, initial_belief, actions, robot_state_action_map, state_to_observation, state_action_reward_map, 
+                 end_states, constant = 1000, maxDepth = 100, targets = set()):
         #e (float): Threshold value below which the expected sum of discounted rewards for the POMDP is considered 0. Default value is 0.005.
         # c (float): Parameter that controls the importance of exploration in the UCB heuristic. Default value is 1.
         # no_particles (int): Controls the maximum number of particles that will be kept at each node 
@@ -110,21 +111,22 @@ class POMCP:
         self.numSimulations = 2 ** 15
         self.gamma = 0.95
         self.e = 0.05
-        self.c = 1
+        self.c = constant
         self.noParticles = 1200
         self.K = 10000
-        self.maxDepth = 0
+        self.maxDepth = maxDepth
         self.TreeDepth = 0
         self.PeakTreeDepth = 0
         # private double[] initialBeliefDistribution;
         # private double [][] UCB;
+        self.initial_belief = initial_belief
         self.root = None
         self.pomdp = None
         self.actions = actions
         self.mdpRewards = None
         self.rewardFunction = None
         self.target = set()
-        self.end_states = set()
+        self.end_states = end_states
 
         self.is_min = False
         self.stateOfInteste = None
@@ -141,6 +143,15 @@ class POMCP:
         self.state_to_observation = state_to_observation
 
         self.initialUCB(10000, 100)
+
+
+
+        def initializePOMCP(self):
+            self.TreeDepth = 0
+            self.PeakTreeDepth = 0
+            if not self.UCB: self.initialUCB(1000, 100)
+            # this.shieldLevel = NO_SHIELD; 
+            # 		this.useLocalShields = false;
 
         def fastUCB(self, N, n, logN):
             if N < 1000 and n < 100: return self.UCB[N][n]
@@ -163,6 +174,11 @@ class POMCP:
         def set_root(self, node):
             self.root = node
 	
+        def reset_root(self):
+            self.root = POMCPNode()
+            for key, prob in self.initial_belief:
+                self.root[key] = prob * self.K
+
         def draw_from_probabilities(self, probabilities):
             states, probs = zip(*probabilities.items())
             next_state = random.choices(states, weights=probs, k=1)[0]
@@ -187,7 +203,7 @@ class POMCP:
                 next_state = self.step(s, action_index)
                 obs_sample = self.get_observation(next_state)
                 if obs_sample == obs:
-                    child.belief[next_state] += 1
+                    child.belief[next_state] = child.belief.get(next_state, 0) + 1
                     child_belief_size += 1
 
         def update(self, actionIndex, obs):
