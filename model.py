@@ -9,9 +9,10 @@ import time
 import random 
 
 class Model:
-    def __init__(self, robot_nodes, actions, cost, transition, transiton_prob, obstacles = [], base1 = [], base2 = [], end_states = set()):
+    def __init__(self, robot_nodes, robot_node_label, actions, cost, transition, transiton_prob, obstacles = [], base1 = [], base2 = [], end_states = set()):
         self.t0 = time.time()
         self.robot_nodes = robot_nodes # {state: (label, prob)}
+        self.robot_node_label = robot_node_label # {state: label}
         self.actions = actions
         self.cost = cost
         self.transiton = transition
@@ -649,11 +650,12 @@ class Model:
             # ((x, y, oc), dra_state), label, dfa_state = support
             (stateWS_time, dra_state), label, dfa_state = support
             state_WS, oc = stateWS_time[:-1], stateWS_time[-1]
-            state = state_WS, label, dra_state
+            label_dra = self.robot_node_label[state_WS]
+            state = state_WS, label_dra, dra_state
             for obsWS in self.state_observation_map_WS[state]:
                 obsWS_time = (*obsWS, oc)
                 new_obs.add(((obsWS_time, dra_state), label, dfa_state))
-                # new_obs.add((((ox, oy, oc), odra), label, dfa_state)) is it the same ?
+                # new_obs.add((((ox, oy, oc), odra), label, dfa_state)) is it the same ? yes
         observation = list(new_obs)[0]
         print("observation", observation)
         return observation
@@ -813,15 +815,21 @@ if __name__ == "__main__":
         for j in range(1, 20, 2):
             WS_node_dict[(i, j)] = {frozenset(): 1.0}
     robot_nodes = dict()
+    robot_node_label = dict()
     for loc, prop in WS_node_dict.items():
         if (loc[0], loc[1]) in obstacle:
             robot_nodes[(loc[0], loc[1])] = {frozenset(['obstacle']): 1.0}
+            robot_node_label[(loc[0], loc[1])] = frozenset(['obstacle'])
         elif (loc[0], loc[1]) in base1:
             robot_nodes[(loc[0], loc[1])] = {frozenset(['base1']): 1.0}
+            robot_node_label[(loc[0], loc[1])] = frozenset(['base1'])
         elif (loc[0], loc[1]) in base2:
             robot_nodes[(loc[0], loc[1])] = {frozenset(['base2']): 1.0}
+            robot_node_label[(loc[0], loc[1])] = frozenset(['base2'])
         else:
             robot_nodes[(loc[0], loc[1])] = prop
+            robot_node_label[(loc[0], loc[1])] = frozenset()
+
 
     all_base = '& F base1 & F base2 G ! obstacle'
     
@@ -834,7 +842,7 @@ if __name__ == "__main__":
     for state in initial_belief_support:
         initial_belief[state] = 1 / len(initial_belief_support)
 
-    pomdp = Model(robot_nodes, actions, cost, transition, transition_prob, obstacle, base1, base2, end_states)
+    pomdp = Model(robot_nodes, robot_node_label, actions, cost, transition, transition_prob, obstacle, base1, base2, end_states)
     # pomdp.display_state_transiton()
     pomdp.compute_accepting_states(all_base)
     pomdp.compute_winning_region()
