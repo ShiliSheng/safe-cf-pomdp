@@ -641,7 +641,7 @@ class Model:
         f_accept_observation.close()
 
 ##########
-    def get_observation_from_belief(self, support_belief = []): # TODO @piany to review
+    def get_observation_from_belief(self, support_belief = []): # TODO @piany to review (Done)
         # ret observation = (((ox, oy, oc), dra_state), label, dfa_state)
         # how to get observation from belief support if dra is not always the same
         # return (((6, 6, 1), 1), frozenset(), 2)
