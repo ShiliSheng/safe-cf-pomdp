@@ -9,7 +9,8 @@ import time
 import random 
 
 class Model:
-    def __init__(self, robot_nodes, robot_node_label, actions, cost, transition, transiton_prob, obstacles = [], base1 = [], base2 = [], end_states = set()):
+    def __init__(self, robot_nodes, robot_node_label, actions, cost, transition, transiton_prob, initial_belief,
+                 obstacles = [], base1 = [], base2 = [], end_states = set(), max_steps = 100, gamma = 0.95):
         self.t0 = time.time()
         self.robot_nodes = robot_nodes # {state: (label, prob)}
         self.robot_node_label = robot_node_label # {state: label}
@@ -18,9 +19,9 @@ class Model:
         self.transiton = transition
         self.transition_prob = transiton_prob
         self.obstacles = obstacles
+        self.initial_belief = initial_belief
         self.base1 = base1
         self.base2 = base2
-        
         self.robot_edges = dict()
         self.state_tra = [{} for _ in range(len(self.actions))]
         self.robot_state_action_map = {}        # (state, actionIndex) : {next_state, prob}
@@ -29,6 +30,8 @@ class Model:
         self.dra = None
         self.pomcp = None
         self.end_states = end_states
+        self.max_steps = max_steps
+        self.gamma = gamma
 
     def set_transition_prob(self, fnode, actionIndex):
         u = self.actions[actionIndex]
@@ -706,6 +709,7 @@ class Model:
                             (((7, 5, 1), 1), frozenset(), 2),
                             (((7, 7, 1), 1), frozenset(), 2),
                             ]
+            
         observation = self.get_observation_from_belief(support_belief) # how to get observation of belief support
         print(observation)
         obs_time = observation[0][0][2]
@@ -786,6 +790,43 @@ class Model:
         self.pomcp = POMCP(self.initial_belief, self.actions, self.robot_state_action_map, self.state_observation_map, 
                            self.state_action_reward_map, self.end_states, constant, max_depth)
         # PartiallyObservableMonteCarloPlanning pomcp = new PartiallyObservableMonteCarloPlanning(, , target, minMax, statesOfInterest, endStates, constant, maxDepth);
+    
+    def select_actoin(self):#TODO
+        return self.pomcp.select_action()
+
+    def take_action(self, state, actionIndex): #TODO
+        observation = -1
+        reward = -1
+        return observation, reward
+    
+    def get_observation_from_state(): #TODO
+        return -1
+
+    def update_beleif(self, actionIndex, pomdp_observation):#TODO
+        return -1
+    
+    def sample_state(self):
+        return
+
+    def eval(self):
+        self.compute_accepting_states(all_base) 
+        step = 0
+        discounted_reward = 0
+        undiscounted_redward = 0
+        state_ground_truth = self.sample_state()
+        while step < self.max_steps:
+            # environment_observation = observe()
+            # acp = comformal_prediction()
+            self.compute_winning_region() # is winning region indepent of current belief ? @pian
+            actionIndex = self.select_action()
+            next_state_ground_truth, reward = self.take_action(state_ground_truth, actionIndex)
+            pomdp_observation = self.get_observaton_from_state(next_state_ground_truth)
+            self.update_belief(actionIndex, pomdp_observation)
+            state_ground_truth = next_state_ground_truth
+            step += 1
+            discounted_reward += self.gamma * reward
+            undiscounted_redward += reward
+
 if __name__ == "__main__":
     U = actions = ['N', 'S', 'E', 'W', 'ST']
     C = cost = [3, 3, 3, 3, 1]
@@ -832,22 +873,25 @@ if __name__ == "__main__":
 
 
     all_base = '& F base1 & F base2 G ! obstacle'
-    
-    initial_belief_support = [(((5, 5, 1), 1), frozenset(), 2), 
-                            (((5, 7, 1), 1), frozenset(), 2),
-                            (((7, 5, 1), 1), frozenset(), 2),
-                            (((7, 7, 1), 1), frozenset(), 2),
+    # (x, y, oc), dra, label, dfa
+    initial_belief_support = [(((5, 5, 0), 1), frozenset(), 2), 
+                            (((5, 7, 0), 1), frozenset(), 2),
+                            (((7, 5, 0), 1), frozenset(), 2),
+                            (((7, 7, 0), 1), frozenset(), 2),
                             ]
     initial_belief = {}
     for state in initial_belief_support:
         initial_belief[state] = 1 / len(initial_belief_support)
 
-    pomdp = Model(robot_nodes, robot_node_label, actions, cost, transition, transition_prob, obstacle, base1, base2, end_states)
+    pomdp = Model(robot_nodes, robot_node_label, actions, cost, 
+                  transition, transition_prob,  initial_belief,
+                  obstacle, base1, base2, end_states)
+    pomdp.init_pomcp() # set pomcp method
+    pomdp.eval()
     # pomdp.display_state_transiton()
-    pomdp.compute_accepting_states(all_base)
-    pomdp.compute_winning_region()
+    #compute accpeting states (based on static obstacles and goals defined by property)
     # pomdp.check_winning()
-    pomdp.init_pomcp()
+    
     """
         # online planning
         
