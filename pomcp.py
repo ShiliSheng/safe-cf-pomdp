@@ -1,5 +1,12 @@
+from MDP_TG.mdp import Motion_MDP_label, Motion_MDP, compute_accept_states
+from MDP_TG.dra import Dra, Dfa, Product_Dra, Product_Dfa
+from MDP_TG.vi4wr import syn_plan_prefix, syn_plan_prefix_dfa
+from networkx.classes.digraph import DiGraph
+import pickle
+import time
 import math
 import random
+from model import Model
 from collections import defaultdict
 # class POMCPBelief:
 #     def __init__(self) -> None:
@@ -102,8 +109,10 @@ class POMCPNode:
 
 
 class POMCP:
-    def __init__(self, initial_belief, actions, robot_state_action_map, state_to_observation, state_action_reward_map, 
-                 end_states, constant = 1000, maxDepth = 100, targets = set()):
+    def __init__(self, pomdp, constant = 1000, maxDepth = 100, end_states = set(), target = set()):
+
+        # def __init__(self, initial_belief, actions, robot_state_action_map, state_to_observation, state_action_reward_map, 
+        #              end_states, constant = 1000, maxDepth = 100, targets = set()):
         #e (float): Threshold value below which the expected sum of discounted rewards for the POMDP is considered 0. Default value is 0.005.
         # c (float): Parameter that controls the importance of exploration in the UCB heuristic. Default value is 1.
         # no_particles (int): Controls the maximum number of particles that will be kept at each node 
@@ -111,23 +120,20 @@ class POMCP:
         self.numSimulations = 2 ** 15
         self.gamma = 0.95
         self.e = 0.05
-        self.c = constant
         self.noParticles = 1200
         self.K = 10000
-        self.maxDepth = maxDepth
         self.TreeDepth = 0
         self.PeakTreeDepth = 0
+        self.c = constant
+        self.maxDepth = maxDepth
+
         # private double[] initialBeliefDistribution;
         # private double [][] UCB;
-        self.initial_belief = initial_belief
-        self.root = None
-        self.pomdp = None
-        self.actions = actions
-        self.mdpRewards = None
-        self.rewardFunction = None
-        self.target = set()
+        self.pomdp = pomdp
+        self.target = target
         self.end_states = end_states
 
+        self.root = None
         self.is_min = False
         self.stateOfInteste = None
         self.varNames = []
@@ -138,314 +144,320 @@ class POMCP:
         self.stateSuccessorCumProb = {}
         self.shiledLevel = 0
 
-        self.robot_state_action_map = robot_state_action_map
-        self.state_action_reward_map = state_action_reward_map
-        self.state_to_observation = state_to_observation
+        # self.initial_belief = self.pomdp.initial_belief
+        # self.actions = self.pomdp.actions
+        # self.mdpRewards = self.pomdp.state_action_reward_map
+        # self.rewardFunction = self.pomdp.state_action_reward_map
 
-        def initializePOMCP(self):
+        # self.robot_state_action_map = self.pomdp.robot_state_action_map
+        # self.state_action_reward_map = self.pomdp.state_action_reward_map
+        # self.state_to_observation = self.pomdp.state_to_observation
+
+    def initializePOMCP(self):
+        self.TreeDepth = 0
+        self.PeakTreeDepth = 0
+        if not self.UCB: self.initialUCB(1000, 100)
+        # this.shieldLevel = NO_SHIELD; 
+        # 		this.useLocalShields = false;
+
+    def fastUCB(self, N, n, logN):
+        if N < 1000 and n < 100: return self.UCB[N][n]
+        if n == 0: return float("inf")
+        return (logN / n) ** 0.5 * self.c
+    
+    def initialUCB(self, UCB_N, UCB_n):
+        self.UCB = [[0] * UCB_n for _ in range(UCB_N)]
+        for N in range(UCB_N):
+            for n in range(UCB_n):
+                if n == 0: self.UCB[N][n] = float("inf")
+                else: self.UCB[N][n] = math.log(N + 1) / n
+    
+    def set_num_simulations(self, n):
+        self.num_simulations = n
+
+    def set_verbose(self, v):
+        self.verbose = v
+
+    def set_root(self, node):
+        self.root = node
+
+    def reset_root(self):
+        self.root = POMCPNode()
+        for key, prob in self.pomdp.initial_belief.items():
+            self.root.belief[key] = prob * self.K
+
+    def draw_from_probabilities(self, probabilities):
+        states, probs = zip(*probabilities.items())
+        next_state = random.choices(states, weights=probs, k=1)[0]
+        return next_state
+    
+    def step(self, state, actionIndex):
+        probabilities = self.pomdp.robot_state_action_map[state][actionIndex]
+        states, probs = zip(*probabilities.items())
+        next_state = random.choices(states, weights=probs, k=1)[0]
+        return next_state
+    
+    def get_observation(self, state):
+        if (state not in self.pomdp.state_observation_map):
+            print("error")
+        return self.pomdp.state_observation_map[state]
+    
+    def invigorate_belief(self, parent, child, action_index, obs):
+        # fill child belief with particles
+        child_belief_size = sum(cnt for cnt in child.belief.values())
+        while child_belief_size < self.K:
+            # s = self.draw_from_probabilities(parent.belief)
+            s = parent.sample_state_from_belief()
+            next_state = self.step(s, action_index)
+            obs_sample = self.get_observation(next_state)
+            if obs_sample == obs:
+                child.belief[next_state] = child.belief.get(next_state, 0) + 1
+                child_belief_size += 1
+
+    def update(self, actionIndex, obs):
+        qnode = self.root.get_child_by_action_index(actionIndex)
+        vnode = qnode.get_child_by_action_index(obs)
+        self.invigorate_belief(self.root, vnode, actionIndex, obs)
+        vnode.clear()
+        self.root = vnode
+
+    # def Update(self, actionIndex, obs):
+    #     beliefs = defaultdict(int)
+    #     qnode = self.root.get_child_by_action_index(actionIndex)
+    #     isVnode = qnode.check_child_by_observation_index(obs)
+    #     if isVnode:
+    #         vnode = qnode.get_child_by_observation_index(obs)
+    #         beliefs = vnode.belief.copy()
+    #     if not beliefs and (not isVnode or not qnode.get_child_by_observation_index(obs).belief):
+    #         return False
+        
+    #     if isVnode and qnode.get_child_by_observation_index(obs).belief:
+    #         vnode = qnode.get_child_by_observation_index(obs)
+    #         if vnode.belief:
+    #             state = vnode.belief.keys()[0]
+    #     else:
+    #         state = beliefs.keys()[0]
+        
+    #     newRoot = POMCPNode()
+    #     self.expand(newRoot, state)
+    #     newRoot.belief = beliefs
+    #     self.invigorate_belief(self.root, newRoot, actionIndex, obs)
+    #     self.root = newRoot
+    #     return True
+
+    def get_default_action(self):
+        return actions[0]
+
+    def select_action(self):
+        distableTrue = False
+        if distableTrue: return -1
+        self.UCT_search()
+        actionIndex = self.greedyUCB(self.root, False)
+        return actionIndex    
+
+    def UCT_search(self):
+        for n in range(self.numSimulations):
+            state = self.root.sample_state_from_belief()
+            if self.verbose >= 2: print("====Start UCT search with sample state", state, "nums Search", n)
             self.TreeDepth = 0
             self.PeakTreeDepth = 0
-            if not self.UCB: self.initialUCB(1000, 100)
-            # this.shieldLevel = NO_SHIELD; 
-            # 		this.useLocalShields = false;
+            reward = self.simulateV(state, self.root)
+            if (self.verbose >= 2):
+                print("==MCTSMCT after num simulation", n)
+        if self.verbose >= 1:
+            print("finishing all simulations" + self.numSimulations)
 
-        def fastUCB(self, N, n, logN):
-            if N < 1000 and n < 100: return self.UCB[N][n]
-            if n == 0: return float("inf")
-            return (logN / n) ** 0.5 * self.c
+    def simulateV(self, state, vnode):
+        self.PeakTreeDepth = self.TreeDepth
+        if not vnode.children:
+            self.expand(vnode, state)
+        if (self.TreeDepth >= self.maxDepth): return 0
+
+        # 		// TODO check later for shielding logic
+        # 		if (TreeDepth == 1 && shieldLevel != ON_THE_FLY_SHIELD) {
+        # 			vnode.getBelief().addParticle(state); //add sample for only first layer
+        # 			vnode.getBelief().updateBeliefSupport(state);
+        # 		}
+        actionIndex = self.greedUCB(vnode, True)
+        # 		if (shieldLevel == ON_THE_FLY_SHIELD) {
+        # 			vnode.getBelief().addParticle(state); //add sample for every layer
+        # 			if (!vnode.getBelief().isStateInBeliefSupport(state)) { // only check when a new unique particle is to be added
+        # 				vnode.getBelief().updateBeliefSupport(state);
+        # 				if (!isSetOfStatesWinning(vnode.getBelief().getUniqueStatesInt())) {
+        # 	//				System.out.println("\n" + vnode.getBelief().getUniqueStatesInt() + "is not winning. TreeDepth = " + TreeDepth);
+        # 					POMCPNode qparent = vnode.getParent();
+        # 					int parentActionIndex = qparent.getH();
+        # 					POMCPNode vparent = qparent.getParent();
+        # 					vparent.addIllegalActionIndex(parentActionIndex);
+        # 					if (verbose >= 5) {
+        # 						System.out.println("Currnet Node=" + vnode.getID() + " Current belief support" + vnode.getBelief().getUniqueStatesInt()  );
+        # 						System.out.println("Currenting belief support is not winning. ");
+        # 						System.out.println("shield level" + shieldLevel +" shielded action: " + allActions.get(parentActionIndex)
+        # 								+ "\n adding to illegal actions for it parent node " + vparent.getID() 
+        # 								+ " parent belief support" +  vparent.getBelief().getUniqueStatesInt());
+        # 					}
+        # 	//				System.out.println("after" + vparent.getIllegalActions());
+        # 				} else {
+        # 					if (verbose >= 5) {
+        # 						System.out.println("safe. Current Belief Support" + vnode.getBelief().getUniqueStatesInt() + " vnode ID="+ vnode.getID() );
+        # 					}
+        # 				}
+        # 			}		
+        # 		}
+        qnode = vnode.get_child_by_action_index(actionIndex)
+        total_reward = self.simulateQ(state, qnode, actionIndex)
+        vnode.increaseV(total_reward)
+        return total_reward
+
+
+    def simulateQ(self, state, qnode, actionIndex):
+        delayed_reward = 0
+        nextState = self.step(state, actionIndex)
+        observation = self.get_observatoin(nextState)
+        done = nextState in self.end_states
+        immediate_reward = self.step_reward(state, actionIndex)
+        total_reward = 0
+
+        if self.verbose >= 3:
+            print("uct action = ", self.actions[actionIndex], "reward=", immediate_reward, "state", nextState)
+
+        state = nextState
+        vnode = None
+        if qnode.check_child_by_observation_index(observation):
+            vnode = qnode.get_child_by_obseravation(observation)
         
-        def initialUCB(self, UCB_N, UCB_n):
-            self.UCB = [[0] * UCB_n for _ in range(UCB_N)]
-            for N in range(UCB_N):
-                for n in range(UCB_n):
-                    if n == 0: self.UCB[N][n] = float("inf")
-                    else: self.UCB[N][n] = math.log(N + 1) / n
-        
-        def set_num_simulations(self, n):
-            self.num_simulations = n
-
-        def set_verbose(self, v):
-            self.verbose = v
-
-        def set_root(self, node):
-            self.root = node
-	
-        def reset_root(self):
-            self.root = POMCPNode()
-            for key, prob in self.initial_belief:
-                self.root[key] = prob * self.K
-
-        def draw_from_probabilities(self, probabilities):
-            states, probs = zip(*probabilities.items())
-            next_state = random.choices(states, weights=probs, k=1)[0]
-            return next_state
-        
-        def step(self, state, actionIndex):
-            probabilities = self.robot_state_action_map[state][actionIndex]
-            states, probs = zip(*probabilities.items())
-            next_state = random.choices(states, weights=probs, k=1)[0]
-            return next_state
-        
-        def get_observation(self, state):
-            obs =  self.state_to_observation[state]
-            return obs
-        
-        def invigorate_belief(self, parent, child, action_index, obs):
-            # fill child belief with particles
-            child_belief_size = sum(cnt for cnt in child.belief.values())
-            while child_belief_size < self.K:
-                # s = self.draw_from_probabilities(parent.belief)
-                s = parent.sample_state_from_belief()
-                next_state = self.step(s, action_index)
-                obs_sample = self.get_observation(next_state)
-                if obs_sample == obs:
-                    child.belief[next_state] = child.belief.get(next_state, 0) + 1
-                    child_belief_size += 1
-
-        def update(self, actionIndex, obs):
-            qnode = self.root.get_child_by_action_index(actionIndex)
-            vnode = qnode.get_child_by_action_index(obs)
-            self.invigorate_belief(self.root, vnode, actionIndex, obs)
-            vnode.clear()
-            self.root = vnode
-
-        def Update(self, actionIndex, obs):
-            beliefs = defaultdict(int)
-            qnode = self.root.get_child_by_action_index(actionIndex)
-            isVnode = qnode.check_child_by_observation_index(obs)
-            if isVnode:
-                vnode = qnode.get_child_by_observation_index(obs)
-                beliefs = vnode.belief.copy()
-            if not beliefs and (not isVnode or not qnode.get_child_by_observation_index(obs).belief):
-                return False
-            
-            if isVnode and qnode.get_child_by_observation_index(obs).belief:
-                vnode = qnode.get_child_by_observation_index(obs)
-                if vnode.belief:
-                    state = vnode.belief.keys()[0]
-            else:
-                state = beliefs.keys()[0]
-            
-            newRoot = POMCPNode()
-            self.expand(newRoot, state)
-            newRoot.belief = beliefs
-            self.invigorate_belief(self.root, newRoot, actionIndex, obs)
-            self.root = newRoot
-            return True
-
-        def get_default_action(self):
-            return actions[0]
-
-        def select_action(self):
-            distableTrue = False
-            if distableTrue: return -1
-            self.UCT_search()
-            actionIndex = self.greedyUCB(self.root, False)
-            return actionIndex    
-    
-        def UCT_search(self):
-            for n in range(self.numSimulations):
-                state = self.root.sample_state_from_belief()
-                if self.verbose >= 2: print("====Start UCT search with sample state", state, "nums Search", n)
-                self.TreeDepth = 0
-                self.PeakTreeDepth = 0
-                reward = self.simulateV(state, self.root)
-                if (self.verbose >= 2):
-                    print("==MCTSMCT after num simulation", n)
-            if self.verbose >= 1:
-                print("finishing all simulations" + self.numSimulations)
-    
-        def simulateV(self, state, vnode):
-            self.PeakTreeDepth = self.TreeDepth
-            if not vnode.children:
-                self.expand(vnode, state)
-            if (self.TreeDepth >= self.maxDepth): return 0
-
-            # 		// TODO check later for shielding logic
-            # 		if (TreeDepth == 1 && shieldLevel != ON_THE_FLY_SHIELD) {
-            # 			vnode.getBelief().addParticle(state); //add sample for only first layer
-            # 			vnode.getBelief().updateBeliefSupport(state);
-            # 		}
-            actionIndex = self.greedUCB(vnode, True)
-            # 		if (shieldLevel == ON_THE_FLY_SHIELD) {
-            # 			vnode.getBelief().addParticle(state); //add sample for every layer
-            # 			if (!vnode.getBelief().isStateInBeliefSupport(state)) { // only check when a new unique particle is to be added
-            # 				vnode.getBelief().updateBeliefSupport(state);
-            # 				if (!isSetOfStatesWinning(vnode.getBelief().getUniqueStatesInt())) {
-            # 	//				System.out.println("\n" + vnode.getBelief().getUniqueStatesInt() + "is not winning. TreeDepth = " + TreeDepth);
-            # 					POMCPNode qparent = vnode.getParent();
-            # 					int parentActionIndex = qparent.getH();
-            # 					POMCPNode vparent = qparent.getParent();
-            # 					vparent.addIllegalActionIndex(parentActionIndex);
-            # 					if (verbose >= 5) {
-            # 						System.out.println("Currnet Node=" + vnode.getID() + " Current belief support" + vnode.getBelief().getUniqueStatesInt()  );
-            # 						System.out.println("Currenting belief support is not winning. ");
-            # 						System.out.println("shield level" + shieldLevel +" shielded action: " + allActions.get(parentActionIndex)
-            # 								+ "\n adding to illegal actions for it parent node " + vparent.getID() 
-            # 								+ " parent belief support" +  vparent.getBelief().getUniqueStatesInt());
-            # 					}
-            # 	//				System.out.println("after" + vparent.getIllegalActions());
-            # 				} else {
-            # 					if (verbose >= 5) {
-            # 						System.out.println("safe. Current Belief Support" + vnode.getBelief().getUniqueStatesInt() + " vnode ID="+ vnode.getID() );
-            # 					}
-            # 				}
-            # 			}		
-            # 		}
-            qnode = vnode.get_child_by_action_index(actionIndex)
-            total_reward = self.simulateQ(state, qnode, actionIndex)
-            vnode.increaseV(total_reward)
-            return total_reward
-    
-
-        def simulateQ(self, state, qnode, actionIndex):
-            delayed_reward = 0
-            nextState = self.step(state, actionIndex)
-            observation = self.get_observatoin(nextState)
-            done = nextState in self.end_states
-            immediate_reward = self.step_reward(state, actionIndex)
-            total_reward = 0
-
-            if self.verbose >= 3:
-                print("uct action = ", self.actions[actionIndex], "reward=", immediate_reward, "state", nextState)
-
-            state = nextState
-            vnode = None
-            if qnode.check_child_by_observation_index(observation):
-                vnode = qnode.get_child_by_obseravation(observation)
-            
-            para_expand_count = 1
-            if (not vnode and (not done) and (qnode.n >= para_expand_count)):
-                vnode = POMCPNode()
-                vnode = self.expand_node(state)
-                vnode.h = observation
-                vnode.parent = qnode
-                qnode.add_child(vnode, observation)
-
-                if not done:
-                    self.TreeDepth += 1
-                    if vnode:
-                        delayed_reward += self.simulateV(state, vnode)
-                    else:
-                        delayed_reward += self.rollout(state)
-                    self.TreeDepth -= 1
-                else:
-                    total_reward += self.get_state_reward(state)
-            total_reward += immediate_reward + self.gamma * delayed_reward
-            qnode.increaseV(total_reward)
-            return total_reward
-
-        def get_legal_actions(self, state):
-            return set(self.robot_state_action_map[state].keys())
-
-        def expand_node(self, state):
+        para_expand_count = 1
+        if (not vnode and (not done) and (qnode.n >= para_expand_count)):
             vnode = POMCPNode()
-            vnode.belief[state] += 1
-            available_actions = self.get_legal_actions(state)
-            for actionIndex, action in enumerate(self.actions):
-                if action not in available_actions: continue
-                qnode = POMCPNode()
-                qnode.h = actionIndex
-                qnode.set_h_action(True)
-                qnode.parent = vnode
-                vnode.add_child(qnode, actionIndex)
-            return vnode
-        
-        def step_reward(self, state, actionIndex):
-            if state not in self.state_action_reward_map:
-                return float("-inf")
-            if actionIndex not in self.state_action_reward_map[state]:
-                return float("-inf")
-            return self.state_action_reward_map[state][actionIndex]
-        
-        def get_state_reward(self, state):
-            return 0
-        
-        def get_random_actoin_index(self, state):
-            available_action_index = self.robot_state_action_map[state].keys()
-            return random.choice(list(available_action_index))
-        
-        def rollout(self, state):
-            total_reward = 0
-            discount = 1
-            done = False
-            if self.verbose >= 3: print("starting rollout")
-            numStep = 0
-            remainTree = self.maxDepth - self.TreeDepth
+            vnode = self.expand_node(state)
+            vnode.h = observation
+            vnode.parent = qnode
+            qnode.add_child(vnode, observation)
 
-            while (not done and numStep < remainTree):
-                actionIndex = self.get_random_action_index(state)
-                next_state = self.step(state, actionIndex)
-                reward = self.step_reward(state, actionIndex)
-                done = next_state in self.end_states
-                if self.verbose >= 4:
-                    print("state", state, "action", self.actions[actionIndex], "reward", reward, "depth", numStep, "totalR", total_reward)
-                total_reward += reward * discount
-                discount *= self.gamma
-                numStep += 1
-                state = next_state
-            """
-            if done: print("Done")
-            """
-            total_reward += self.get_state_reward(state) * discount 
-            return total_reward
-    
-        def greedyUCB(self, vnode, ucb):
-            besta = []
-            bestq = float("-inf")
-            N = vnode.n
-            logN = math.log(N + 1)
-            children = vnode.children
-            action_index_candidates = []
-            for i in children:
-                action_index_candidates.append(i)
-                # 			if (shieldLevel == ON_THE_FLY_SHIELD && vnode.isActionIndexIllegal(i)) {
-                # //				System.out.println("shield level" + shieldLevel + " known illegal action " + allActions.get(i) +" for node " + vnode.getID() + " belief support" 	+ vnode.getBelief().getUniqueStatesInt());
-                # 				continue;
-                # 			}
-                qnode = children[i]
-                n = qnode.n
-                q = qnode.getV()
-                if n == 0: return i
-                if ucb:
-                    q += self.fastUCB(N, n, logN)
-                if q >= bestq:
-                    if q > bestq:
-                        besta = []
-                    bestq = q
-                    besta.append(i)
-#                   #//			if ( !ucb  && shieldLevel == 1  && isActionShieldedForNode(vnode, action) ) { // shiled only apply to the most up level
-                    # ////				System.out.println("shield Level = "+shieldLevel+ " Shielded Action = "  + action);
-                    # //				continue;
-                    # //			}
-                    # //			if (shieldLevel == 3 && vnode.isActionIllegal(action)) {
-                    # ////				System.out.println("shield level" + shieldLevel + " known illegal action" 
-                    # ////									+ action +" for node " + vnode.getID() + " belief support" 
-                    # ////									+ vnode.getBelief().getUniqueStatesInt());
-                    # //				continue;
-                    # //			}
-                    # //			if (shieldLevel == 3 && isActionShieldedForNode(vnode, action)) {
-                    # ////				System.out.println("shield level" + shieldLevel +" shielded action: " + action 
-                    # ////									+ "\n adding to illegal actions for node " + vnode.getID() 
-                    # ////									+ " belief support" +  vnode.getBelief().getUniqueStatesInt());
-                    # //				vnode.addIllegalActions(action);
-                    # //				continue;
-                    # //			}
-            if besta:
-                return random.choice(besta)
+            if not done:
+                self.TreeDepth += 1
+                if vnode:
+                    delayed_reward += self.simulateV(state, vnode)
+                else:
+                    delayed_reward += self.rollout(state)
+                self.TreeDepth -= 1
             else:
-                actionIndex = random.choice(action_index_candidates)
-                qParent = vnode.parent
-                vParent = qParent.parent
-                vParent.add_illegal_action_index(qParent.h)
-                return actionIndex
+                total_reward += self.get_state_reward(state)
+        total_reward += immediate_reward + self.gamma * delayed_reward
+        qnode.increaseV(total_reward)
+        return total_reward
 
-        def get_action_index(self, action):
-            if not self.action2Index:
-                self.action2Index = {}
-                for i, action in enumerate(self.actions):
-                    self.action2Index[action] = i
-            return self.action2Index.get(action, -1)
+    def get_legal_actions(self, state):
+        return set(self.robot_state_action_map[state].keys())
+
+    def expand_node(self, state):
+        vnode = POMCPNode()
+        vnode.belief[state] += 1
+        available_actions = self.get_legal_actions(state)
+        for actionIndex, action in enumerate(self.actions):
+            if action not in available_actions: continue
+            qnode = POMCPNode()
+            qnode.h = actionIndex
+            qnode.set_h_action(True)
+            qnode.parent = vnode
+            vnode.add_child(qnode, actionIndex)
+        return vnode
+    
+    def step_reward(self, state, actionIndex):
+        if state not in self.state_action_reward_map:
+            return float("-inf")
+        if actionIndex not in self.state_action_reward_map[state]:
+            return float("-inf")
+        return self.state_action_reward_map[state][actionIndex]
+    
+    def get_state_reward(self, state):
+        return 0
+    
+    def get_random_actoin_index(self, state):
+        available_action_index = self.robot_state_action_map[state].keys()
+        return random.choice(list(available_action_index))
+    
+    def rollout(self, state):
+        total_reward = 0
+        discount = 1
+        done = False
+        if self.verbose >= 3: print("starting rollout")
+        numStep = 0
+        remainTree = self.maxDepth - self.TreeDepth
+
+        while (not done and numStep < remainTree):
+            actionIndex = self.get_random_action_index(state)
+            next_state = self.step(state, actionIndex)
+            reward = self.step_reward(state, actionIndex)
+            done = next_state in self.end_states
+            if self.verbose >= 4:
+                print("state", state, "action", self.actions[actionIndex], "reward", reward, "depth", numStep, "totalR", total_reward)
+            total_reward += reward * discount
+            discount *= self.gamma
+            numStep += 1
+            state = next_state
+        """
+        if done: print("Done")
+        """
+        total_reward += self.get_state_reward(state) * discount 
+        return total_reward
+
+    def greedyUCB(self, vnode, ucb):
+        besta = []
+        bestq = float("-inf")
+        N = vnode.n
+        logN = math.log(N + 1)
+        children = vnode.children
+        action_index_candidates = []
+        for i in children:
+            action_index_candidates.append(i)
+            # 			if (shieldLevel == ON_THE_FLY_SHIELD && vnode.isActionIndexIllegal(i)) {
+            # //				System.out.println("shield level" + shieldLevel + " known illegal action " + allActions.get(i) +" for node " + vnode.getID() + " belief support" 	+ vnode.getBelief().getUniqueStatesInt());
+            # 				continue;
+            # 			}
+            qnode = children[i]
+            n = qnode.n
+            q = qnode.getV()
+            if n == 0: return i
+            if ucb:
+                q += self.fastUCB(N, n, logN)
+            if q >= bestq:
+                if q > bestq:
+                    besta = []
+                bestq = q
+                besta.append(i)
+#                   #//			if ( !ucb  && shieldLevel == 1  && isActionShieldedForNode(vnode, action) ) { // shiled only apply to the most up level
+                # ////				System.out.println("shield Level = "+shieldLevel+ " Shielded Action = "  + action);
+                # //				continue;
+                # //			}
+                # //			if (shieldLevel == 3 && vnode.isActionIllegal(action)) {
+                # ////				System.out.println("shield level" + shieldLevel + " known illegal action" 
+                # ////									+ action +" for node " + vnode.getID() + " belief support" 
+                # ////									+ vnode.getBelief().getUniqueStatesInt());
+                # //				continue;
+                # //			}
+                # //			if (shieldLevel == 3 && isActionShieldedForNode(vnode, action)) {
+                # ////				System.out.println("shield level" + shieldLevel +" shielded action: " + action 
+                # ////									+ "\n adding to illegal actions for node " + vnode.getID() 
+                # ////									+ " belief support" +  vnode.getBelief().getUniqueStatesInt());
+                # //				vnode.addIllegalActions(action);
+                # //				continue;
+                # //			}
+        if besta:
+            return random.choice(besta)
+        else:
+            actionIndex = random.choice(action_index_candidates)
+            qParent = vnode.parent
+            vParent = qParent.parent
+            vParent.add_illegal_action_index(qParent.h)
+            return actionIndex
+
+    def get_action_index(self, action):
+        if not self.action2Index:
+            self.action2Index = {}
+            for i, action in enumerate(self.actions):
+                self.action2Index[action] = i
+        return self.action2Index.get(action, -1)
         
     # 	public void initializeStates() 
     # 	{
@@ -893,3 +905,70 @@ class POMCP:
     # //		return -1;
     # //	}
     # } 
+
+
+if __name__ == "__main__":
+    U = actions = ['N', 'S', 'E', 'W', 'ST']
+    C = cost = [3, 3, 3, 3, 1]
+
+    transition_prob = [[] for _ in range(len(actions))]
+    transition_prob[0] = [0.1, 0.8, 0.1] # S
+    transition_prob[1] = [0.1, 0.8, 0.1] # N
+    transition_prob[2] = [0.1, 0.8, 0.1] # E
+    transition_prob[3] = [0.1, 0.8, 0.1] # W
+    transition_prob[4] = [1]             # ST
+
+    WS_transition = [[] for _ in range(len(actions))]
+    WS_transition[0] = [(-2, 2), (0, 2), (2, 2)]       # S
+    WS_transition[1] = [(-2, -2), (0, -2), (2, -2)]    # N
+    WS_transition[2] = [(2, -2), (2, 0), (2, 2)]       # E
+    WS_transition[3] = [(-2, -2), (-2, 0), (-2, 2)]    # W
+    WS_transition[4] = [(0, 0)]                         # ST
+
+    obstacles =  [(5, 1), (7, 3), (17, 7)]
+    target = [(19, 19)]
+    end_states = set([(19,1)])
+
+    robot_nodes = set()
+    for i in range(1, 20, 2):
+        for j in range(1, 20, 2):
+            node = (i, j)
+            robot_nodes.add(node) 
+
+    initial_belief_support = [(5,5), (5,7), (7,5), (7,7)]
+    initial_belief = {}
+    for state in initial_belief_support:
+        initial_belief[state] = 1 / len(initial_belief_support)
+
+    pomdp = Model(robot_nodes, actions, cost, WS_transition, transition_prob,
+                     initial_belief, obstacles, target, end_states)
+
+    pomcp = POMCP(pomdp)
+
+    motion_mdp, AccStates = pomcp.pomdp.compute_accepting_states() 
+    H = 5
+    observation_successor_map = pomcp.pomdp.compute_H_step_space(H)
+    step = 0
+    discounted_reward = 0
+    undiscounted_redward = 0
+    num_episodes = 1
+    for _ in range(num_episodes):
+        pomcp.reset_root()
+        state_ground_truth = pomcp.root.sample_state_from_belief()
+        print(state_ground_truth, "current state")
+        obs_current_node = pomcp.get_observation(state_ground_truth)
+        max_steps = 1000
+        while step < max_steps:
+            # environment_observation = observe()
+            ACP_step = {} # comformal_prediction() #TODO
+            # self.compute_winning_region() # is winning region indepent of current belief ? @pian
+            obs_mdp, Winning_observation = pomcp.pomdp.online_compute_winning_region(obs_current_node, AccStates, observation_successor_map, H, ACP_step)
+            actionIndex = pomcp.select_action()
+            next_state_ground_truth = pomcp.step(state_ground_truth, actionIndex)
+            reward = pomcp.step_reward(state_ground_truth, actionIndex)
+            obs_current_node = pomcp.get_observation(next_state_ground_truth)
+            pomcp.update(actionIndex, obs_current_node)
+            state_ground_truth = next_state_ground_truth
+            step += 1
+            discounted_reward += pomcp.gamma * reward
+            undiscounted_redward += reward
