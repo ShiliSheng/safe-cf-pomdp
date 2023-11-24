@@ -107,7 +107,7 @@ class Model:
         return motion_mdp, AccStates
 
     def init_observations(self):
-        # @pian, why state to observation set?
+        # @pian, why state is mapped to observation set?
         # modified to state to observation, one to one map
         self.obs_nodes = set()
         for i in range(2, 20, 4):
@@ -134,13 +134,11 @@ class Model:
         for fnode in self.motion_mdp.nodes(): 
             fx = fnode[0]
             fy = fnode[1] 
-            support_obs = set()  
             for o_node in self.obs_nodes:
                 ox = o_node[0]
                 oy = o_node[1]  
                 if (abs(fx-ox) <= 2) and (abs(fy-oy) <= 2):
-                    support_obs.add(o_node)
-            self.state_observation_map[fnode] = support_obs
+                    self.state_observation_map[fnode] = o_node
 
     def compute_H_step_space(self, H):
         #Compute the H-step recahable support belief states, idea: o -> s -> s' -> o'
@@ -156,10 +154,9 @@ class Model:
             support_set = self.observation_state_map[o_node]
             for fnode in support_set:
                 for tnode in self.motion_mdp.successors(fnode):
-                    support_obs = self.state_observation_map[tnode]
-                    for obs in support_obs:
-                        if obs not in succ_obs:
-                            succ_obs.add(obs)
+                    obs = self.state_observation_map[tnode]
+                    if obs not in succ_obs:
+                        succ_obs.add(obs)
             observation_successor_map[o_node, 1] = succ_obs
 
         if H > 1:
@@ -374,3 +371,6 @@ if __name__ == "__main__":
     ACP_step = dict() #conformal prediction constraints
     obs_mdp, Winning_observation = pomdp.online_compute_winning_region(obs_current_node, AccStates, observation_successor_map, H, ACP_step)
     #---winning region computation ends---
+
+    # for key, value in pomdp.observation_state_map.items():
+    #     print(key, value)
