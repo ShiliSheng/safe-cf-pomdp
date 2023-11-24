@@ -29,6 +29,7 @@ class Model:
         self.init_observations()
         self.pomcp = None
         self.end_states = end_states
+        self.winning_obs = set()
         #state_observation_map
     def set_transition_prob(self, fnode, actionIndex):
         u = self.actions[actionIndex]
@@ -106,8 +107,6 @@ class Model:
         return motion_mdp, AccStates
 
     def init_observations(self):
-        # @pian, why state is mapped to observation set?
-        # modified to state to observation, one to one map
         self.obs_nodes = set()
         for i in range(2, 20, 4):
             for j in range(2, 20, 4):
@@ -171,14 +170,13 @@ class Model:
         
         return observation_successor_map
 
-    def online_compute_winning_region(self, obs_initial_node, AccStates, observation_successor_map, H, ACP_step):
+    def online_compute_winning_region(self, obs_initial_node, AccStates, observation_successor_map, H, ACP = []):
         #--------------ONLINE-------------------------
         # Build the N-step reachable support belief MDP, the target set for the support belief MDP is given by AccStates (which is computed offline)
         # ACP_step: computed adaptive conformal prediction constraints
-        ACP = dict()
-        for i in range(1, H+1): 
-            ACP[i] = ()          
-            #ACP[i] = ACP_step[i]
+        if not ACP:
+            ACP = [()] * H
+            
         obstacle_static = set(self.obstacles)
         obstacle_new = dict()
         for i in range(H):
@@ -281,7 +279,7 @@ class Model:
             # ts_node_id, ts_node_x, ts_node_y, ts_node_d
             f_accept_observation.write('%s,%s\n' %(nd[0], nd[1]))
         f_accept_observation.close()
-
+        self.winning_obs = Winning_obs
         return obs_mdp, Winning_obs
 
     def check_winning(self, support_belief = [], actionIndex = 0, current_state = -1):
@@ -338,7 +336,7 @@ if __name__ == "__main__":
     WS_transition[3] = [(-2, -2), (-2, 0), (-2, 2)]    # W
     WS_transition[4] = [(0, 0)]                         # ST
 
-    obstacles =  [(5, 1), (7, 3), (17, 7)]
+    obstacles =  [(5, 1), (7, 3), (17, 7), (9,5)]
     target = [(19, 19)]
     end_states = set([(19,1)])
 
