@@ -2,14 +2,12 @@ from MDP_TG.mdp import Motion_MDP_label, Motion_MDP, compute_accept_states
 from MDP_TG.dra import Dra, Dfa, Product_Dra, Product_Dfa
 from MDP_TG.vi4wr import syn_plan_prefix, syn_plan_prefix_dfa
 from networkx.classes.digraph import DiGraph
-from pomcp import POMCP
-from pomcp import POMCPNode
 import pickle
 import time
 import random 
 
 class Model:
-    def __init__(self, robot_nodes, actions, cost, transition, transiton_prob, initial_belief_support, initial_belief,
+    def __init__(self, robot_nodes, actions, cost, transition, transiton_prob, initial_belief,
                  obstacles = [], target = [], end_states = set(), max_steps = 100, gamma = 0.95):
         self.t0 = time.time()
         self.robot_nodes = robot_nodes # set of states
@@ -17,7 +15,7 @@ class Model:
         self.cost = cost
         self.transiton = transition
         self.transition_prob = transiton_prob
-        self.initial_belief_support = initial_belief_support
+
         self.initial_belief = initial_belief
         self.obstacles = obstacles
         self.target = target
@@ -26,11 +24,13 @@ class Model:
         self.robot_state_action_map = dict()        # (state, actionIndex) : {next_state, prob}
         self.state_action_reward_map = dict()       # (state, actionIndex) : (cost)
         self.init_transition()
+        self.motion_mdp = Motion_MDP(self.robot_nodes, self.robot_edges, self.actions)
+        self.init_observations()
         self.pomcp = None
         self.end_states = end_states
         self.max_steps = max_steps
         self.gamma = gamma
-
+        #state_observation_map
     def set_transition_prob(self, fnode, actionIndex):
         u = self.actions[actionIndex]
         c = self.cost[actionIndex]
@@ -64,7 +64,6 @@ class Model:
         for fnode in self.robot_nodes: 
             for action_index, action in enumerate(self.actions):
                 self.set_transition_prob(fnode, action_index)
-
     
     def display_state_transiton(self):
         print("++++++++++ state transition")
@@ -77,12 +76,15 @@ class Model:
             for state in self.state_tra[actionIndex]:
                 print(state, u, self.state_tra[actionIndex][state])
 
+    def display_state_observation(self):
+        for state, obs in self.state_observation_map.items():
+            print("state", state, "obs = ", obs)
+
     def compute_accepting_states(self):
         #compute safe space with respect to static enviornment
-        motion_mdp = Motion_MDP(self.robot_nodes, self.robot_edges, self.actions)
-
+        motion_mdp = self.motion_mdp
         self.successor_mdp = dict()
-        for node in motion_mdp.nodes():
+        for node in self.motion_mdp.nodes():
             self.successor_mdp[node]= motion_mdp.successors(node)
 
         Sf = compute_accept_states(motion_mdp, self.obstacles, self.target)
@@ -101,12 +103,12 @@ class Model:
             #(ts_node_x, ts_node_y)
             f_accept_node.write('%s,%s\n' %(nd[0], nd[1]))
         f_accept_node.close()
-
+        
         return motion_mdp, AccStates
 
-        
-    def compute_H_step_space(self, motion_mdp, H):
-        #Compute the H-step recahable support belief states, idea: o -> s -> s' -> o'
+    def init_observations(self):
+        # @pian, why state to observation set?
+        # modified to state to observation, one to one map
         self.obs_nodes = set()
         for i in range(2, 20, 4):
             for j in range(2, 20, 4):
@@ -119,7 +121,7 @@ class Model:
             ox = o_node[0]
             oy = o_node[1]
             support = set()
-            for fnode in motion_mdp.nodes(): 
+            for fnode in self.motion_mdp.nodes(): 
                 fx = fnode[0]
                 fy = fnode[1]    
                 if (abs(fx-ox) <= 2) and (abs(fy-oy) <= 2):
@@ -129,7 +131,7 @@ class Model:
 
         #----
         self.state_observation_map = dict()
-        for fnode in motion_mdp.nodes(): 
+        for fnode in self.motion_mdp.nodes(): 
             fx = fnode[0]
             fy = fnode[1] 
             support_obs = set()  
@@ -140,6 +142,8 @@ class Model:
                     support_obs.add(o_node)
             self.state_observation_map[fnode] = support_obs
 
+    def compute_H_step_space(self, H):
+        #Compute the H-step recahable support belief states, idea: o -> s -> s' -> o'
         #----calculate H-step reachable set------------
         observation_successor_map = dict()
         for o_node in self.obs_nodes:
@@ -151,7 +155,7 @@ class Model:
             succ_obs = set()
             support_set = self.observation_state_map[o_node]
             for fnode in support_set:
-                for tnode in motion_mdp.successors(fnode):
+                for tnode in self.motion_mdp.successors(fnode):
                     support_obs = self.state_observation_map[tnode]
                     for obs in support_obs:
                         if obs not in succ_obs:
@@ -171,7 +175,7 @@ class Model:
         
         return observation_successor_map
 
-    def Online_compute_winning_region(self, obs_initial_node, AccStates, observation_successor_map, H, ACP_step):
+    def online_compute_winning_region(self, obs_initial_node, AccStates, observation_successor_map, H, ACP_step):
         #--------------ONLINE-------------------------
         # Build the N-step reachable support belief MDP, the target set for the support belief MDP is given by AccStates (which is computed offline)
         # ACP_step: computed adaptive conformal prediction constraints
@@ -284,45 +288,6 @@ class Model:
 
         return obs_mdp, Winning_obs
 
-##########
-    def get_observation_from_belief(self, support_belief = []): 
-        # ret observation = ((ox, oy), oc)
-        new_obs = set()
-        for support in support_belief:
-            (state, oc) = support
-            for obsWS in self.state_observation_map_WS[state]:
-                obsWS_time = (*obsWS, oc)
-                new_obs.add(obsWS_time)
-        observation = list(new_obs)[0]
-        print("observation", observation)
-        return observation
-
-    def get_next_possible_states(self, stateWS, actionIndex): #TODO
-        if stateWS not in self.robot_state_action_map or actionIndex not in self.robot_state_action_map[stateWS]:
-            print("erorr")
-            return set()
-        return self.robot_state_action_map[stateWS][actionIndex]
-
-    def get_next_belief_support(self, support_belief = [], actionIndex = -1, observation = -1): # TODO
-        # return
-        # b, a, o => b'
-        next_support_beleif = set()
-        for key in support_belief:
-            # ((x, y), oc) = key
-            (stateWS, oc) = key
-            next_possible_states = self.get_next_possible_states(stateWS, actionIndex, observation)
-
-            for tnode_WS in next_possible_states:
-                next_state = (tnode_WS, oc+1)
-                next_support_beleif.add(next_state)
-        return list(next_support_beleif)
-
-    def step(self, state, actionIndex):
-            probabilities = self.robot_state_action_map[state][actionIndex]
-            states, probs = zip(*probabilities.items())
-            next_state = random.choices(states, weights=probs, k=1)[0]
-            return next_state
-
     def check_winning(self, support_belief = [], actionIndex = 0, current_state = -1):
         #----Randomly choose the last step belief state-------------
         belief = (1/4, 1/4, 1/4, 1/4)
@@ -359,61 +324,9 @@ class Model:
             print('The belief support is a failure!')
 
 
-    def init_pomcp(self):
-        constant = 1000
-        max_depth = 200
-        initial_belief_support = [(((5, 5, 1), 1), frozenset(), 2), 
-                        (((5, 7, 1), 1), frozenset(), 2),
-                        (((7, 5, 1), 1), frozenset(), 2),
-                        (((7, 7, 1), 1), frozenset(), 2),
-                        ]
-        initial_belief = {}
-        for state in initial_belief_support:
-            initial_belief[state] = 1 / len(initial_belief_support)
-        self.initial_belief = initial_belief_support
-        self.pomcp = POMCP(self.initial_belief, self.actions, self.robot_state_action_map, self.state_observation_map, 
-                           self.state_action_reward_map, self.end_states, constant, max_depth)
-        # PartiallyObservableMonteCarloPlanning pomcp = new PartiallyObservableMonteCarloPlanning(, , target, minMax, statesOfInterest, endStates, constant, maxDepth);
-    
-    def select_actoin(self):#TODO
-        return self.pomcp.select_action()
-
-    def take_action(self, state, actionIndex): #TODO
-        observation = -1
-        reward = -1
-        return observation, reward
-    
-    def get_observation_from_state(): #TODO
-        return -1
-
-    def update_beleif(self, actionIndex, pomdp_observation):#TODO
-        return -1
-    
-    def sample_state(self):
-        return
-
-    def eval(self):
-        self.compute_accepting_states() 
-        step = 0
-        discounted_reward = 0
-        undiscounted_redward = 0
-        state_ground_truth = self.sample_state()
-        while step < self.max_steps:
-            # environment_observation = observe()
-            # acp = comformal_prediction()
-            self.compute_winning_region() # is winning region indepent of current belief ? @pian
-            actionIndex = self.select_action()
-            next_state_ground_truth, reward = self.take_action(state_ground_truth, actionIndex)
-            pomdp_observation = self.get_observaton_from_state(next_state_ground_truth)
-            self.update_belief(actionIndex, pomdp_observation)
-            state_ground_truth = next_state_ground_truth
-            step += 1
-            discounted_reward += self.gamma * reward
-            undiscounted_redward += reward
-
 if __name__ == "__main__":
     U = actions = ['N', 'S', 'E', 'W', 'ST']
-    C = cost = [3, 3, 3, 3, 1]
+    C = cost = [9, 3, 3, 3, 1]
 
     transition_prob = [[] for _ in range(len(actions))]
     transition_prob[0] = [0.1, 0.8, 0.1] # S
@@ -454,31 +367,10 @@ if __name__ == "__main__":
     motion_mdp, AccStates = pomdp.compute_accepting_states()
 
     H = 5 #Horizon
-    observation_successor_map = pomdp.compute_H_step_space(motion_mdp, H)
+    observation_successor_map = pomdp.compute_H_step_space(H)
 
     #---Online planning starts----
     obs_current_node = (6, 6)
     ACP_step = dict() #conformal prediction constraints
-    obs_mdp, Winning_observation = pomdp.Online_compute_winning_region(obs_current_node, AccStates, observation_successor_map, H, ACP_step)
+    obs_mdp, Winning_observation = pomdp.online_compute_winning_region(obs_current_node, AccStates, observation_successor_map, H, ACP_step)
     #---winning region computation ends---
-      
-    pomdp.init_pomcp() # set pomcp method
-    pomdp.eval()
-    # pomdp.display_state_transiton()
-    #compute accpeting states (based on static obstacles and goals defined by property)
-    # pomdp.check_winning()
-    
-    """
-        # online planning
-        
-        pomdp = model()
-        pomdp.compute_accepting_states(allbase)
-
-        while step < 1000:
-            step += 1
-            acp  = acp(observation)
-            winning_region = compute_wining_region(acp)
-            action = pomcp.select_action(winning_region)
-                # check_wining(belif_support)
-            new_belief, observation <= exectue(action)
-    """
