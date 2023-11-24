@@ -68,7 +68,7 @@ class POMCPNode:
         self.n += 1
 
     def add_child(self, node, index):
-        self.children[node] = index
+        self.children[index] = node
     
     def remove_child(self, index):
         if index not in self.children: return
@@ -126,7 +126,7 @@ class POMCP:
         self.PeakTreeDepth = 0
         self.c = constant
         self.maxDepth = maxDepth
-
+        self.verbose = 1
         # private double[] initialBeliefDistribution;
         # private double [][] UCB;
         self.pomdp = pomdp
@@ -152,11 +152,13 @@ class POMCP:
         # self.robot_state_action_map = self.pomdp.robot_state_action_map
         # self.state_action_reward_map = self.pomdp.state_action_reward_map
         # self.state_to_observation = self.pomdp.state_to_observation
+        
+        self.initializePOMCP()
 
     def initializePOMCP(self):
         self.TreeDepth = 0
         self.PeakTreeDepth = 0
-        if not self.UCB: self.initialUCB(1000, 100)
+        self.initialUCB(1000, 100)
         # this.shieldLevel = NO_SHIELD; 
         # 		this.useLocalShields = false;
 
@@ -265,12 +267,13 @@ class POMCP:
             if (self.verbose >= 2):
                 print("==MCTSMCT after num simulation", n)
         if self.verbose >= 1:
-            print("finishing all simulations" + self.numSimulations)
+            print("finishing all simulations", self.numSimulations)
 
     def simulateV(self, state, vnode):
         self.PeakTreeDepth = self.TreeDepth
         if not vnode.children:
             self.expand(vnode, state)
+
         if (self.TreeDepth >= self.maxDepth): return 0
 
         # 		// TODO check later for shielding logic
@@ -278,7 +281,7 @@ class POMCP:
         # 			vnode.getBelief().addParticle(state); //add sample for only first layer
         # 			vnode.getBelief().updateBeliefSupport(state);
         # 		}
-        actionIndex = self.greedUCB(vnode, True)
+        actionIndex = self.greedyUCB(vnode, True)
         # 		if (shieldLevel == ON_THE_FLY_SHIELD) {
         # 			vnode.getBelief().addParticle(state); //add sample for every layer
         # 			if (!vnode.getBelief().isStateInBeliefSupport(state)) { // only check when a new unique particle is to be added
@@ -309,22 +312,47 @@ class POMCP:
         vnode.increaseV(total_reward)
         return total_reward
 
+    def expand(self, parent, state):
+        availableActions = self.get_legal_actions(state)
+        for actionIndex in availableActions:
+            newChild = POMCPNode()
+            newChild.set_h_action(True)
+            newChild.h = actionIndex
+            newChild.parent = parent
+            parent.add_child(newChild, actionIndex)
+            #TODO
+            # if self.shieldLevel == 2 and self.TreeDepth == 0 and parent.is_action_index_illegal(actionIndex):
+            #     continue
+            # if self.shieldLevel == 1 and self.TreeDepth == 0 and self.isActionShieldedForNode(parent, actionIndex):
+            #     parent.add_illegal_action_index(actionIndex)
+        
+        if not parent.children:
+            print("add default available actions")
+            for actionIndex in availableActions:
+                newChild = POMCPNode()
+                newChild.set_h_action(True)
+                newChild.h = actionIndex
+                newChild.parent = parent
+                parent.add_child(newChild, actionIndex)
+    
+    def is_action_index_shielded_for_node(self, parent, actionIndex): #TODO
+        return False
 
     def simulateQ(self, state, qnode, actionIndex):
         delayed_reward = 0
         nextState = self.step(state, actionIndex)
-        observation = self.get_observatoin(nextState)
+        observation = self.get_observation(nextState)
         done = nextState in self.end_states
         immediate_reward = self.step_reward(state, actionIndex)
         total_reward = 0
 
         if self.verbose >= 3:
-            print("uct action = ", self.actions[actionIndex], "reward=", immediate_reward, "state", nextState)
+            print("uct action = ", self.pomdp.actions[actionIndex], "reward=", immediate_reward, "state", nextState)
 
         state = nextState
         vnode = None
         if qnode.check_child_by_observation_index(observation):
-            vnode = qnode.get_child_by_obseravation(observation)
+            vnode = qnode.get_child_by_observation_index(observation)
         
         para_expand_count = 1
         if (not vnode and (not done) and (qnode.n >= para_expand_count)):
@@ -348,13 +376,13 @@ class POMCP:
         return total_reward
 
     def get_legal_actions(self, state):
-        return set(self.robot_state_action_map[state].keys())
+        return set(self.pomdp.robot_state_action_map[state].keys())
 
     def expand_node(self, state):
         vnode = POMCPNode()
         vnode.belief[state] += 1
         available_actions = self.get_legal_actions(state)
-        for actionIndex, action in enumerate(self.actions):
+        for actionIndex, action in enumerate(self.pomdp.actions):
             if action not in available_actions: continue
             qnode = POMCPNode()
             qnode.h = actionIndex
@@ -364,11 +392,11 @@ class POMCP:
         return vnode
     
     def step_reward(self, state, actionIndex):
-        if state not in self.state_action_reward_map:
+        if state not in self.pomdp.state_action_reward_map:
             return float("-inf")
-        if actionIndex not in self.state_action_reward_map[state]:
+        if actionIndex not in self.pomdp.state_action_reward_map[state]:
             return float("-inf")
-        return self.state_action_reward_map[state][actionIndex]
+        return self.pomdp.state_action_reward_map[state][actionIndex]
     
     def get_state_reward(self, state):
         return 0
@@ -416,9 +444,10 @@ class POMCP:
             # 				continue;
             # 			}
             qnode = children[i]
+            # print("-------",i, qnode)
             n = qnode.n
-            q = qnode.getV()
             if n == 0: return i
+            q = qnode.getV()
             if ucb:
                 q += self.fastUCB(N, n, logN)
             if q >= bestq:
@@ -909,7 +938,7 @@ class POMCP:
 
 if __name__ == "__main__":
     U = actions = ['N', 'S', 'E', 'W', 'ST']
-    C = cost = [3, 3, 3, 3, 1]
+    C = cost = [3300, 3, 3, 3, 1]
 
     transition_prob = [[] for _ in range(len(actions))]
     transition_prob[0] = [0.1, 0.8, 0.1] # S
@@ -957,16 +986,17 @@ if __name__ == "__main__":
         state_ground_truth = pomcp.root.sample_state_from_belief()
         print(state_ground_truth, "current state")
         obs_current_node = pomcp.get_observation(state_ground_truth)
-        max_steps = 1000
+        max_steps = 20
         while step < max_steps:
             # environment_observation = observe()
             ACP_step = {} # comformal_prediction() #TODO
             # self.compute_winning_region() # is winning region indepent of current belief ? @pian
-            obs_mdp, Winning_observation = pomcp.pomdp.online_compute_winning_region(obs_current_node, AccStates, observation_successor_map, H, ACP_step)
+            # obs_mdp, Winning_observation = pomcp.pomdp.online_compute_winning_region(obs_current_node, AccStates, observation_successor_map, H, ACP_step)
             actionIndex = pomcp.select_action()
             next_state_ground_truth = pomcp.step(state_ground_truth, actionIndex)
             reward = pomcp.step_reward(state_ground_truth, actionIndex)
             obs_current_node = pomcp.get_observation(next_state_ground_truth)
+            print("step", step, "s", "action", actions[actionIndex], state_ground_truth, "s'", next_state_ground_truth, "observation", obs_current_node)
             pomcp.update(actionIndex, obs_current_node)
             state_ground_truth = next_state_ground_truth
             step += 1
