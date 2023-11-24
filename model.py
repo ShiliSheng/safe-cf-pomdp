@@ -8,7 +8,7 @@ import random
 
 class Model:
     def __init__(self, robot_nodes, actions, cost, transition, transiton_prob, initial_belief,
-                 obstacles = [], target = [], end_states = set(), max_steps = 100, gamma = 0.95):
+                 obstacles = [], target = [], end_states = set()):
         self.t0 = time.time()
         self.robot_nodes = robot_nodes # set of states
         self.actions = actions
@@ -17,6 +17,7 @@ class Model:
         self.transition_prob = transiton_prob
 
         self.initial_belief = initial_belief
+        self.initial_belief_support = list(initial_belief.keys())
         self.obstacles = obstacles
         self.target = target
         self.state_tra = [{} for _ in range(len(self.actions))]
@@ -28,8 +29,6 @@ class Model:
         self.init_observations()
         self.pomcp = None
         self.end_states = end_states
-        self.max_steps = max_steps
-        self.gamma = gamma
         #state_observation_map
     def set_transition_prob(self, fnode, actionIndex):
         u = self.actions[actionIndex]
@@ -219,7 +218,7 @@ class Model:
         for o_node in obs_nodes_reachable.keys():
             support_set = self.observation_state_map[o_node[0]]
             for node in support_set:  
-                for k, u in enumerate(U):
+                for k, u in enumerate(self.actions):
                     tnode_set = self.robot_state_action_map[node][k]
                     for ttnode in list(tnode_set.keys()):
                         t_obs_set = self.state_observation_map[ttnode]
@@ -230,7 +229,7 @@ class Model:
                                 tnode = (t_obs, oc)
                             if tnode in obs_nodes_reachable:  
                                 obs_edges[(o_node, u, tnode)] = (1, C[k])
-
+        U = self.actions
         obs_mdp = Motion_MDP_label(obs_nodes_reachable, obs_edges, U, obs_initial_node_count, obs_initial_label)
 
         #----
@@ -359,7 +358,7 @@ if __name__ == "__main__":
         initial_belief[state] = 1 / len(initial_belief_support)   
 
     pomdp = Model(robot_nodes, actions, cost, WS_transition, transition_prob,
-                    initial_belief_support, initial_belief, obstacles, target, end_states)
+                    initial_belief, obstacles, target, end_states)
 
     motion_mdp, AccStates = pomdp.compute_accepting_states()
 
