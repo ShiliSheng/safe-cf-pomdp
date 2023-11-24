@@ -35,10 +35,11 @@ from collections import defaultdict
 
 #     def size(self):
 #         return len(self.particles)
-
+ON_THE_FLY = 1
 class POMCPNode:
     def __init__(self) -> None:
         self.belief = defaultdict(int)
+        self.belief_particles = []
         self.clear()
 
     def clear(self):
@@ -48,8 +49,12 @@ class POMCPNode:
         self.isQNode = False
         self.v = 0
         self.n = 0
+        self.time = 0
         self.illegalActionIndexes = set()
     
+    def add_particle(self, state):
+        self.belief[state] = self.belief.get(state, 0) + 1;
+
     def add_illegal_action_index(self, actionIndex):
         self.remove_child(actionIndex)
         self.illegalActionIndexes.add(actionIndex)
@@ -60,6 +65,12 @@ class POMCPNode:
     def set_h_action(self, isAction):
         self.isQNode = isAction
 
+    def getH(self):
+        return self.h
+    
+    def getParent(self):
+        return self.parent
+    
     def getV(self):
         return self.v / self.n
     
@@ -102,12 +113,21 @@ class POMCPNode:
         return self.children[index]
     
     def sample_state_from_belief(self):
+        # return random.choice(self.belief_particles)
         states, counts = zip(*self.belief.items())
         total_counts = sum(cnt for cnt in counts)
         probs = (cnt / total_counts for cnt in counts)
         return random.choices(states, weights=probs, k=1)[0]
 
+    def get_belief_suport(self):
+        return self.belief.keys()
+    
+    def get_time(self):
+        return self.time
 
+    def have_state_in_belief_support(self, state):
+        return state in self.belief
+    
 class POMCP:
     def __init__(self, pomdp, constant = 1000, maxDepth = 100, end_states = set(), target = set()):
 
@@ -117,7 +137,7 @@ class POMCP:
         # c (float): Parameter that controls the importance of exploration in the UCB heuristic. Default value is 1.
         # no_particles (int): Controls the maximum number of particles that will be kept at each node 
         #                       and the number of particles that will be sampled from the posterior belief after an action is taken.
-        self.numSimulations = 2 ** 15
+        self.numSimulations = 2 ** 4
         self.gamma = 0.95
         self.e = 0.05
         self.noParticles = 1200
@@ -127,8 +147,6 @@ class POMCP:
         self.c = constant
         self.maxDepth = maxDepth
         self.verbose = 1
-        # private double[] initialBeliefDistribution;
-        # private double [][] UCB;
         self.pomdp = pomdp
         self.target = target
         self.end_states = end_states
@@ -142,17 +160,8 @@ class POMCP:
         self.stateSuccessorsHashSet = {}
         self.stateSuccessorArryList = {}
         self.stateSuccessorCumProb = {}
-        self.shiledLevel = 0
+        self.shiledLevel = 1
 
-        # self.initial_belief = self.pomdp.initial_belief
-        # self.actions = self.pomdp.actions
-        # self.mdpRewards = self.pomdp.state_action_reward_map
-        # self.rewardFunction = self.pomdp.state_action_reward_map
-
-        # self.robot_state_action_map = self.pomdp.robot_state_action_map
-        # self.state_action_reward_map = self.pomdp.state_action_reward_map
-        # self.state_to_observation = self.pomdp.state_to_observation
-        
         self.initializePOMCP()
 
     def initializePOMCP(self):
@@ -187,6 +196,9 @@ class POMCP:
         self.root = POMCPNode()
         for key, prob in self.pomdp.initial_belief.items():
             self.root.belief[key] = prob * self.K
+        # for state, state_fre in self.root.belief.items():
+        #     for _ in range(state_fre):
+        #         self.root.belief_particles.append(state)
 
     def draw_from_probabilities(self, probabilities):
         states, probs = zip(*probabilities.items())
@@ -207,9 +219,15 @@ class POMCP:
     def invigorate_belief(self, parent, child, action_index, obs):
         # fill child belief with particles
         child_belief_size = sum(cnt for cnt in child.belief.values())
+
+        states, counts = zip(*self.root.belief.items())
+        sum_count = sum(counts)
+        probs = [cnt / sum_count for cnt in counts]
+
         while child_belief_size < self.K:
-            # s = self.draw_from_probabilities(parent.belief)
-            s = parent.sample_state_from_belief()
+            # s = parent.sample_state_from_belief() # sample
+            s = random.choices(states, weights=probs, k=1)[0]
+
             next_state = self.step(s, action_index)
             obs_sample = self.get_observation(next_state)
             if obs_sample == obs:
@@ -258,8 +276,12 @@ class POMCP:
         return actionIndex    
 
     def UCT_search(self):
+        states, counts = zip(*self.root.belief.items())
+        sum_count = sum(counts)
+        probs = [cnt / sum_count for cnt in counts]
         for n in range(self.numSimulations):
-            state = self.root.sample_state_from_belief()
+            # state = self.root.sample_state_from_belief() # sample
+            state = random.choices(states, weights=probs, k=1)[0]
             if self.verbose >= 2: print("====Start UCT search with sample state", state, "nums Search", n)
             self.TreeDepth = 0
             self.PeakTreeDepth = 0
@@ -274,70 +296,29 @@ class POMCP:
         if not vnode.children:
             self.expand(vnode, state)
 
-        if (self.TreeDepth >= self.maxDepth): return 0
-
-        # 		// TODO check later for shielding logic
-        # 		if (TreeDepth == 1 && shieldLevel != ON_THE_FLY_SHIELD) {
-        # 			vnode.getBelief().addParticle(state); //add sample for only first layer
-        # 			vnode.getBelief().updateBeliefSupport(state);
-        # 		}
+        if (self.TreeDepth >= self.maxDepth): 
+            return 0
+        
         actionIndex = self.greedyUCB(vnode, True)
-        # 		if (shieldLevel == ON_THE_FLY_SHIELD) {
-        # 			vnode.getBelief().addParticle(state); //add sample for every layer
-        # 			if (!vnode.getBelief().isStateInBeliefSupport(state)) { // only check when a new unique particle is to be added
-        # 				vnode.getBelief().updateBeliefSupport(state);
-        # 				if (!isSetOfStatesWinning(vnode.getBelief().getUniqueStatesInt())) {
-        # 	//				System.out.println("\n" + vnode.getBelief().getUniqueStatesInt() + "is not winning. TreeDepth = " + TreeDepth);
-        # 					POMCPNode qparent = vnode.getParent();
-        # 					int parentActionIndex = qparent.getH();
-        # 					POMCPNode vparent = qparent.getParent();
-        # 					vparent.addIllegalActionIndex(parentActionIndex);
-        # 					if (verbose >= 5) {
-        # 						System.out.println("Currnet Node=" + vnode.getID() + " Current belief support" + vnode.getBelief().getUniqueStatesInt()  );
-        # 						System.out.println("Currenting belief support is not winning. ");
-        # 						System.out.println("shield level" + shieldLevel +" shielded action: " + allActions.get(parentActionIndex)
-        # 								+ "\n adding to illegal actions for it parent node " + vparent.getID() 
-        # 								+ " parent belief support" +  vparent.getBelief().getUniqueStatesInt());
-        # 					}
-        # 	//				System.out.println("after" + vparent.getIllegalActions());
-        # 				} else {
-        # 					if (verbose >= 5) {
-        # 						System.out.println("safe. Current Belief Support" + vnode.getBelief().getUniqueStatesInt() + " vnode ID="+ vnode.getID() );
-        # 					}
-        # 				}
-        # 			}		
-        # 		}
+        if self.shiledLevel == ON_THE_FLY:
+            if not vnode.have_state_in_belief_support(state): 
+                print("checking", self.TreeDepth)
+                vnode.add_particle(state)
+                if not self.is_current_belief_winning(vnode, self.TreeDepth): #TODO
+                    qparent = vnode.getParent() 
+                    parentActionIndex = qparent.getH()
+                    vparent = qparent.getParent() 
+                    vparent.add_illegal_action_index(parentActionIndex)
+                    print("pruning", vparent.belief.keys(), parentActionIndex)
+
+        if self.TreeDepth >= 1:
+            vnode.add_particle(state)
+
         qnode = vnode.get_child_by_action_index(actionIndex)
         total_reward = self.simulateQ(state, qnode, actionIndex)
         vnode.increaseV(total_reward)
         return total_reward
-
-    def expand(self, parent, state):
-        availableActions = self.get_legal_actions(state)
-        for actionIndex in availableActions:
-            newChild = POMCPNode()
-            newChild.set_h_action(True)
-            newChild.h = actionIndex
-            newChild.parent = parent
-            parent.add_child(newChild, actionIndex)
-            #TODO
-            # if self.shieldLevel == 2 and self.TreeDepth == 0 and parent.is_action_index_illegal(actionIndex):
-            #     continue
-            # if self.shieldLevel == 1 and self.TreeDepth == 0 and self.isActionShieldedForNode(parent, actionIndex):
-            #     parent.add_illegal_action_index(actionIndex)
-        
-        if not parent.children:
-            print("add default available actions")
-            for actionIndex in availableActions:
-                newChild = POMCPNode()
-                newChild.set_h_action(True)
-                newChild.h = actionIndex
-                newChild.parent = parent
-                parent.add_child(newChild, actionIndex)
     
-    def is_action_index_shielded_for_node(self, parent, actionIndex): #TODO
-        return False
-
     def simulateQ(self, state, qnode, actionIndex):
         delayed_reward = 0
         nextState = self.step(state, actionIndex)
@@ -362,18 +343,70 @@ class POMCP:
             vnode.parent = qnode
             qnode.add_child(vnode, observation)
 
-            if not done:
-                self.TreeDepth += 1
-                if vnode:
-                    delayed_reward += self.simulateV(state, vnode)
-                else:
-                    delayed_reward += self.rollout(state)
-                self.TreeDepth -= 1
+        if not done:
+            self.TreeDepth += 1
+            if vnode:
+                delayed_reward += self.simulateV(state, vnode)
             else:
-                total_reward += self.get_state_reward(state)
+                delayed_reward += self.rollout(state)
+            self.TreeDepth -= 1
+        else:
+            total_reward += self.get_state_reward(state)
         total_reward += immediate_reward + self.gamma * delayed_reward
         qnode.increaseV(total_reward)
         return total_reward
+    
+    def is_current_belief_winning(self, vnode, time):
+        if vnode == self.root:
+            for state in self.root.belief:
+                obs = self.get_observation(state)
+                if not self.is_winning((obs, time)):
+                    return False
+        obs = vnode.getH()
+        return self.is_winning((obs, time))  
+
+
+    def expand(self, parent, state):
+        availableActions = self.get_legal_actions(state)
+        for actionIndex in availableActions:
+            newChild = POMCPNode()
+            newChild.set_h_action(True)
+            newChild.h = actionIndex
+            newChild.parent = parent
+            parent.add_child(newChild, actionIndex)
+            #TODO
+            # if self.shieldLevel == 2 and self.TreeDepth == 0 and parent.is_action_index_illegal(actionIndex):
+            #     continue
+            # if self.shieldLevel == 1 and self.TreeDepth == 0 and self.isActionShieldedForNode(parent, actionIndex):
+            #     parent.add_illegal_action_index(actionIndex)
+        
+        if not parent.children:
+            print("add default available actions")
+            for actionIndex in availableActions:
+                newChild = POMCPNode()
+                newChild.set_h_action(True)
+                newChild.h = actionIndex
+                newChild.parent = parent
+                parent.add_child(newChild, actionIndex)
+    
+    def is_action_index_shielded_for_node(self, parent, actionIndex): 
+        if not self.pomdp.winning_obs:
+            return False
+        for state in parent.get_belief_support():
+            for nxt_state in self.get_next_states(state, actionIndex):
+                nxt_obs = self.get_observation(nxt_state)
+                if not self.is_winning((nxt_obs, time+1)):
+                    return True
+        return False
+
+    def get_next_states(self, state, actionIndex):
+        if state not in self.pomdp.robot_state_action_map: return set()
+        if actionIndex not in self.pomdp.robot_state_action_map[state]: return set()
+        nxts =  self.pomdp.robot_state_action_map[state][actionIndex].keys()
+        return nxts
+
+    def is_winning(self, obs_time):
+        return obs_time in self.pomdp.winning_obs
 
     def get_legal_actions(self, state):
         return set(self.pomdp.robot_state_action_map[state].keys())
@@ -401,8 +434,8 @@ class POMCP:
     def get_state_reward(self, state):
         return 0
     
-    def get_random_actoin_index(self, state):
-        available_action_index = self.robot_state_action_map[state].keys()
+    def get_random_action_index(self, state): # to be improved
+        available_action_index = self.pomdp.robot_state_action_map[state].keys()
         return random.choice(list(available_action_index))
     
     def rollout(self, state):
@@ -487,454 +520,6 @@ class POMCP:
             for i, action in enumerate(self.actions):
                 self.action2Index[action] = i
         return self.action2Index.get(action, -1)
-        
-    # 	public void initializeStates() 
-    # 	{
-    # 		stateSuccessorsHashSet = new HashMap<Integer, HashSet<Integer>>();
-    # 		stateSuccessorArrayList = new HashMap<Integer, ArrayList<Integer>> ();
-    # 		stateSuccessorCumProb= new HashMap<Integer, ArrayList<Double>> ();
-    # 		for (int state = 0; state < pomdp.getNumStates(); state++) {
-    # 			for (int actionIndex = 0; actionIndex < allActions.size(); actionIndex++) {
-    # 				int key = getKeyByStateActionIndex(state, actionIndex);
-    # 				Object action = allActions.get(actionIndex);
-    # 				if(!pomdp.getAvailableActions(state).contains(action)) {
-    # 					continue;
-    # 				}
-    # 				int choice = pomdp.getChoiceByAction(state, action);
-    # 				Iterator<Entry<Integer, Double>> iter = pomdp.getTransitionsIterator(state, choice);
-    # 				ArrayList<Integer> nextStates = new ArrayList<Integer> ();
-    # 				ArrayList<Double> nextStatesProbs = new ArrayList<Double> ();
-    # 				ArrayList<Double> nextStatesCumProbs = new ArrayList<Double> ();
-    # 				int count = 0;
-    # 				while (iter.hasNext()) {
-    # 					Map.Entry<Integer, Double> trans = iter.next();
-    # 					nextStates.add(trans.getKey());
-    # 					nextStatesProbs.add(trans.getValue());
-    # 					if (count > 0) {
-    # 						nextStatesCumProbs.add(nextStatesCumProbs.get(count - 1) + trans.getValue());
-    # 					} else {
-    # 						nextStatesCumProbs.add(trans.getValue());
-    # 					}
-    # 					count += 1;
-    # 				}
-    # 				stateSuccessorsHashSet.put(key, new HashSet<> (nextStates));
-    # 				stateSuccessorArrayList.put(key, nextStates);
-    # 				stateSuccessorCumProb.put(key, nextStatesCumProbs);
-    # 				stepReward(state, actionIndex);
-    # 			}
-    # 		}
-    # //		Collections.binarySearch(nextStatesProbs, 0.4);
-    # 	}
-        
-    # 	public double stepReward(int state, int actionIndex) {
-    # 		int key = getKeyByStateActionIndex(state, actionIndex);
-    # 		double reward;
-    # 		if (rewardFunction.containsKey(key)) {
-    # 			reward = rewardFunction.get(key);
-    # 		} else {
-    # 			Object action = allActions.get(actionIndex);
-    # 			int choice = pomdp.getChoiceByAction(state, action);		
-    # 			if (!stateSuccessorArrayList.containsKey(key)) {
-    # 				System.out.println("state = "+ state + allActions.get(actionIndex));
-    # 			}
-    # 			reward = mdpRewards.getTransitionReward(state, choice) + mdpRewards.getStateReward(state); // to check if no shield what is the cost function
-    # 			if (min) {
-    # 				reward *= -1;
-    # 			}
-    # 			rewardFunction.put(key,reward);
-    # 		}
-    # 		return reward;
-    # 	}
-        
-        
-    # 	public void initializeVariables() 
-    # 	{
-    # 		varNames = new ArrayList<String>();
-    # 		for (int i = 0; i < pomdp.getVarList().getNumVars(); i++) {
-    # 			varNames.add(pomdp.getVarList().getName(i));
-    # 		}
-    # 		variableIndexX = varNames.indexOf("ax") > 0 ? varNames.indexOf("ax") : varNames.indexOf("x");
-    # 		variableIndexY = varNames.indexOf("ay") > 0 ? varNames.indexOf("ay") : varNames.indexOf("y");
-    # 	}
-        
-    # 	public int getAX(int state) {
-    # 		return (int) pomdp.getStatesList().get(state).getValueByIndex(variableIndexX);
-    # 	}
-    # 	public int getAY(int state) {
-    # 		return (int) pomdp.getStatesList().get(state).getValueByIndex(variableIndexY);
-    # 	}
-        
-    # 	public List<String> getVarNames()
-    # 	{
-    # 		return varNames;
-    # 	}
-    # 	public String getStateMeaning(int state) 
-    # 	{	
-    # 		return pomdp.getStatesList().get(state).toString(varNames);
-    # 	}
-    # 	public void displayState(int state) 
-    # 	{
-    # 		List<String> varNames = getVarNames();
-    # 		System.out.println("s=" + state + pomdp.getStatesList().get(state).toString( varNames));
-    # //		List<Object> availableActions = pomdp.getAvailableActions(state);
-    # //		System.out.println("Available actions");
-    # //		for (Object a: availableActions) {
-    # //			System.out.print(a + " ");
-    # //		}
-    # //		System.out.println();
-    # 	}
-    # 	public int getStompyState(int PrismState) {
-    # 		return mainShield.getStompyState(PrismState);
-    # 	}
-    # 	public HashSet<Integer> getStompyBeliefSupport(HashSet<Integer> PrismBeliefSupport){
-    # 		HashSet<Integer> StompyBeliefSupport = new HashSet<Integer> ();
-    # 		for (int PrismState : PrismBeliefSupport) {
-    # 			StompyBeliefSupport.add(mainShield.getStompyState(PrismState));
-    # 		}
-    # 		return StompyBeliefSupport;
-    # 	}
-    # 	public HashSet<Integer> getRootBeliefSupportPrism() {
-    # 		return root.getBelief().getUniqueStatesInt();
-    # 	}
-    # 	public HashSet<Integer> getRootBeliefSupportStompy(){
-    # 		return getStompyBeliefSupport(getRootBeliefSupportPrism());
-    # 	}
-    # 	public HashSet<Object> getRootIllegaActions()
-    # 	{
-    # 		HashSet<Integer> illegalActionIndexes = root.getIllegalActionIndexes();
-    # 		HashSet<Object> illegalActions = new HashSet<Object> ();
-    # 		for (int index: illegalActionIndexes) {
-    # 			illegalActions.add(allActions.get(index));
-    # 		}
-    # 		return illegalActions;
-    # 	}
-    # 	public void displayValue(int depth)
-    # 	{
-    # 		Queue<POMCPNode> queue = new LinkedList<POMCPNode>();
-    # 		queue.offer(root);
-    # 		int d = 0;
-    # 		while(!queue.isEmpty()) {
-    # 			if (d >= depth) {
-    # 				System.out.println("reach tree print depth "+ depth);
-    # 				break;
-    # 			}
-    # 			d++;
-    # 			int size = queue.size();
-    # //			if ( d % 2 == 0) {
-    # 				System.out.println("MCTS layer" + d);
-    # //			}
-    # 			for (int i =0; i < size; i++) {
-    # 				POMCPNode node = queue.poll();
-    # 				displayNode(node, d);
-    # 				displayNodeActions(node, d);
-    # 				System.out.println("");
-    # 				HashMap<Integer, POMCPNode> children = node.getChildren();
-    # 				if (children != null) {
-    # 					for(POMCPNode child : children.values()) {
-    # 						if (child.getN() > 0) {
-    # 							queue.offer(child);
-    # 						}
-    # 					}
-    # 				}
-    # 			}
-    # 		}
-    # 	}
-    # 	public void displayNode(POMCPNode node, int depth)
-    # 	{
-    # 		String info = "";
-    # 		if (!node.isQNode()){
-    # 			info +="Id=" + node.getID()+ "depth" + depth  + " o=" + node.getH() + " vmean=" + (node.getV()) + " vall=" + (node.getV() * node.getN()) + " n=" + node.getN() +" Belief Support=" + node.getBelief().getUniqueStatesInt();
-    # 		}
-    # 		else {
-    # 			info +="Id=" + node.getID() + "depth" + depth + " a=" + allActions.get(node.getH() ) + " vmean=" + (node.getV()) + " vall=" + (node.getV() * node.getN()) + " n=" + node.getN() ;
-    # 		}
-    # 		POMCPNode parent = node.getParent();
-    # 		if (parent == null) {
-    # 			System.out.println(info);
-    # 		}
-    # 		else {
-    # 			System.out.print(info + " | ");			
-    # 			displayNode(parent, depth - 1);
-    # 		}
-    # 	}
-    # 	public void displayNodeActions(POMCPNode node, int depth)
-    # 	{
-    # 		String info = "";
-    # 		if (!node.isQNode()){
-    # //			info +="depth" + depth + " obs=" + node.getH()  ;
-    # 		}
-    # 		else {
-    # 			info +="depth" + depth + " a=" + allActions.get(node.getH() ) ;
-    # 		}
-    # 		POMCPNode parent = node.getParent();
-    # 		if (parent == null) {
-    # 			System.out.println(info);
-    # 		}
-    # 		else {
-    # 			System.out.print(info + " | ");			
-    # 			displayNodeActions(parent, depth - 1);
-    # 		}
-    # 	}
-
-    # 	public HashSet<Integer> getNextBeliefSupport(HashSet<Integer> beliefSupport, Object action)
-    # 	{
-    # 		HashSet<Integer> nextBeliefSupport = new HashSet<Integer> ();
-    # 		for (int state: beliefSupport) { // for every state in current belief support
-    # 			HashSet<Integer> nextStates = getNextStates(state, action);			// get its successor states
-    # 			nextBeliefSupport.addAll(nextStates);			// add these states into next belief support
-    # 		}
-    # 		return nextBeliefSupport;
-    # 	}
-        
-    # 	public HashSet<Integer> getNextStates(int state, Object action)
-    # 	{
-    # 		int actionIndex = actionToIndex.get(action);
-    # 		int key = getKeyByStateActionIndex(state, actionIndex);
-            
-    # 		if (stateSuccessorsHashSet.get(key) == null) {
-    # 			HashSet<Integer> nextStates = new HashSet<Integer>();
-    # 			int choice = pomdp.getChoiceByAction(state, action);
-    # 			Iterator<Entry<Integer, Double>> iter = pomdp.getTransitionsIterator(state, choice);
-    # 			while (iter.hasNext()) {
-    # 				Map.Entry<Integer, Double> trans = iter.next();
-    # 				int nextState = trans.getKey();
-    # 				nextStates.add(nextState);
-    # 			}
-    # 			stateSuccessorsHashSet.put(key, nextStates);
-    # 		}
-    # 		return stateSuccessorsHashSet.get(key);
-    # 	}
-        
-    # 	public boolean isActionShieldedForNode(POMCPNode node, Object action) // Main interface checking if action should be shielded
-    # 	{
-    # 		HashSet<Integer> currentBeliefSupport = node.getBelief().getUniqueStatesInt();
-    # 		return isActionShieldedForStates(currentBeliefSupport, action);
-    # 	}
-        
-    # 	public boolean isActionShieldedForStates(HashSet<Integer> beliefSupport, Object action) 
-    # 	{
-    # 		if (useLocalShields) {
-    # 			return isActionShieldedForStatesByLocalShileds(beliefSupport, action);
-    # 		} else {
-    # 			return isActionShieldedForStatesByMainShield(beliefSupport, action);
-    # 		}
-    # 	}
-        
-    # 	public int getStateIndex(int x, int y) 
-    # 	{
-    # 		return x + y * gridSize;
-            
-    # 	}
-    # 	public int getShieldIndex(int state)
-    # 	{
-            
-    # 		int x = getAX(state);
-    # 		int y = getAY(state);
-    # //		int shieldIndex = (x / shieldSize)* (gridSize / shieldSize) + (y / shieldSize) ;
-    # 		return stateToLocalShieldIndex.get(getStateIndex(x, y));
-    # //		System.out.println(state + " get " + getStateMeaning(state) + "x " + x + ", y= " + y + "sheild index" + shieldIndex);
-    # //		return shieldIndex; 
-    # 	}
-    # 	public boolean isActionShieldedForStatesByLocalShileds(HashSet<Integer> beliefSupport, Object action) 
-    # 	{
-    # 		if (localShields == null) {
-    # 			return false; // no local shields available
-    # 		}
-    # 		HashSet<Integer> nextBeliefSupport = getNextBeliefSupport(beliefSupport, action);
-    # 		if (verbose > 0) {
-    # 			System.out.println("considering if to shield action "  + action + " next suport" + nextBeliefSupport);
-    # 		}
-    # 		if (isSetOfStatesWinningByLocalShields(nextBeliefSupport)) {
-    # 			return false;
-    # 		} else {
-    # 			return true;
-    # 		}
-    # 	}
-  
-    # 	public boolean isActionShieldedForStatesByMainShield(HashSet<Integer> beliefSupport, Object action) 
-    # 	{
-    # 		if (mainShield == null) {
-    # 			return false; // no shield available
-    # 		}
-    # 		HashSet<Integer> nextBeliefSupport = getNextBeliefSupport(beliefSupport, action);
-    # 		if (!mainShield.isSetOfStatesWinning(nextBeliefSupport)) {
-    # //			System.out.print("action shield for " + beliefSupport);
-    # 			return true; // action should be shielded because next belief support is not winning
-    # 		}
-    # 		return false;
-    # 	}
-
-    # 	public boolean isSetOfStatesWinning(HashSet<Integer> beliefSupport) {
-    # 		if (!useLocalShields) {
-    # 			return isSetOfStatesWinningByMainShield(beliefSupport);
-    # 		}else {
-    # 			return isSetOfStatesWinningByLocalShields(beliefSupport);
-    # 		}
-    # 	}
-    # 	public boolean isSetOfStatesWinningByMainShield(HashSet<Integer> beliefSupport) {
-    # 		if (mainShield == null) {
-    # 			return true; // no shield available
-    # 		}
-    # 		return mainShield.isSetOfStatesWinning(beliefSupport);
-    # 	}
-    # 	public boolean isSetOfStatesWinningByLocalShields(HashSet<Integer> beliefSupport) {
-    # 		if (localShields == null) {
-    # 			return true; // no shield available
-    # 		}
-    # 		HashMap<Integer, HashSet<Integer>> shieldIndexToBeliefSupport = new HashMap<Integer, HashSet<Integer>> ();
-    # 		for (int state: beliefSupport) {
-    # 			int shieldIndex = getShieldIndex(state);
-    # 			if (!shieldIndexToBeliefSupport.containsKey(shieldIndex)) {
-    # 				HashSet<Integer> belief = new HashSet<Integer>();
-    # 				shieldIndexToBeliefSupport.put(shieldIndex, belief);
-    # 			}
-    # 			shieldIndexToBeliefSupport.get(shieldIndex).add(state);
-    # //			System.out.println("x" + getAX(state)+ "y " + getAY(state) + getStateIndex(getAX(state),getAY(state)) + " " + " " + shieldIndex );
-    # 		}
-    # 		for (int shieldIndex: shieldIndexToBeliefSupport.keySet()) {
-    # 			POMDPShield localShield = localShields.get(shieldIndex);
-    # 			HashSet<Integer> beliefSupportToCheck = shieldIndexToBeliefSupport.get(shieldIndex);
-    # 			if(!localShield.isSetOfStatesWinning(beliefSupportToCheck)) {
-    # 				return false;
-    # 			}
-    # 		}
-    # 		return true;
-    # 	}
-
-    # 	public void loadMainShield(String shieldDir) {
-    # 		File files = new File(shieldDir);
-    # 		File[] array = files.listFiles();
-    # 		for (int i = 0; i < array.length; i++) {
-    # 			if (!array[i].isFile() ) {
-    # 				continue;
-    # 			}
-    # 			File file = array[i];
-    # 			String fileName = array[i].getName(); 
-    # 			if (!fileName.contains("centralized")) {
-    # 				continue;
-    # 			}
-    # 			if (fileName.contains("._")) {
-    # 				continue;
-    # 			}
-    # 			System.out.println("++++Initialize main shield " );
-    # 			System.out.println(fileName);
-    # 			this.isMainShieldAvailable = true;
-    # 			String[] parameters = fileName.split("-");
-    # 			int n = parameters.length;
-    # //			gridSize = Integer.parseInt(parameters[1]);
-    # //			shieldSize = gridSize;
-    # 			int[] pStates = {0, 0, Integer.parseInt(parameters[n-3]), Integer.parseInt(parameters[n-2])}; 
-                
-    # 			String winning = file.toString();
-                
-                
-    # 			mainShield = new POMDPShield(pomdp, winning,  varNames, endStates, pStates);
-    # 			break;
-    # 		}
-    # 	}
-        
-    # 	public void loadShiled() 
-    # 	{
-    # 		File files = new File(".");
-    # 		File[] array = files.listFiles();
-    # 		for (int i = 0; i < array.length; i++) {
-    # 			String path = array[i].getPath();
-    # 			if (path.contains("winningregion")){
-    # 				loadMainShield(path);
-    # 				loadLocalShield(path);
-    # 				return;
-    # 			}
-    # 		}
-    # 		System.out.println("Fail to find directory winningregion");
-    # 	}
-        
-    # 	public void setUseLocalShields(boolean use) 
-    # 	{
-    # 		useLocalShields = use;
-    # 	}
-    # 	public void setShieldLevel(String level) 
-    # 	{
-    # 		shieldLevel = level;
-    # 	}
-    # 	public void loadLocalShield(String shieldDir) 
-    # 	{
-    # 		localShields = new ArrayList<POMDPShield> ();
-    # 		stateToLocalShieldIndex = new HashMap<Integer, Integer> ();
-    # 		gridSize = 0;
-    # 		File files = new File(shieldDir);
-    # 		File[] array = files.listFiles();
-    # 		ArrayList<String> fileNames = new ArrayList<String> ();
-    # 		for (int i = 0; i < array.length; i++) {
-    # 			if (!array[i].isFile()) {
-    # 				continue;
-    # 			}
-    # 			String fileName = array[i].getName(); 
-    # 			if (!fileName.contains("factor")) {
-    # 				continue;
-    # 			}
-    # 			if (fileName.contains("._")) {
-    # 				continue;
-    # 			}
-    # 			fileNames.add(fileName);
-    # 		}
-    # 		Collections.sort(fileNames);
-            
-    # 		for (int i = 0; i < fileNames.size(); i++) {
-    # 			String fileName = fileNames.get(i);
-    # 			String[] parameters = fileName.split("-");
-    # //			shieldSize = Integer.parseInt(parameters[1]);
-    # 			int n= parameters.length;
-    # 			gridSize = Math.max(gridSize, Integer.parseInt(parameters[n - 2]) - Integer.parseInt(parameters[n - 5]) + 1);
-    # 		}
-            
-    # 		for (int i = 0; i < fileNames.size(); i++) {
-    # 			String fileName = fileNames.get(i);
-    # 			System.out.println("++++Initialize shield index = " + localShields.size() + ", shieldName = "+ fileName);
-    # 			this.isLocalShieldAvailable = true;
-    # 			String winning = shieldDir + System.getProperties().getProperty("file.separator") + fileName;
-                
-                
-                
-    # 			String[] parameters = fileName.split("-");
-    # 			int n= parameters.length;
-    # 			int[] pStates = {Integer.parseInt(parameters[n-5]), Integer.parseInt(parameters[n-4]), Integer.parseInt(parameters[n-3]), Integer.parseInt(parameters[n-2])}; 
-                
-    # //			System.out.println(Arrays.toString(pStates));
-                
-    # 			POMDPShield localShield = new POMDPShield(pomdp, winning, varNames, endStates, pStates);
-    # 			for (int x = pStates[0]; x < pStates[2] + 1; x ++ ) {
-    # 				for (int y = pStates[1]; y < pStates[3] + 1; y ++) {
-    # 					int xy = getStateIndex(x, y);
-    # 					int shieldIndex = localShields.size();
-    # 					stateToLocalShieldIndex.put(xy, shieldIndex);
-    # //					System.out.println(x + " " + y+ " " + localShields.size() + xy + " "  + Integer.parseInt(parameters[2])+ " " + Integer.parseInt(parameters[3])+ " " 
-    # //							+ Integer.parseInt(parameters[4])+ " " + Integer.parseInt(parameters[5] ));
-    # 				}
-    # 			}
-    # 			localShields.add(localShield);
-    # 		}
-    # 	}
-    # 	public boolean hasMainShield() 
-    # 	{
-    # 		return this.isMainShieldAvailable;
-    # 	}
-    # 	public boolean hasLocalShield() 
-    # 	{
-    # 		return this.isLocalShieldAvailable;
-    # 	}	
-        
-    # //	public int getDistanceToEndState(int state) {
-    # //		for(int endState: endStates) {
-    # //			int ax = getAX(state);
-    # //			int ay = getAY(state);
-    # //			int x = getAX(endState);
-    # //			int y = getAY(endState);
-    # //			return Math.abs(ax -x) + Math.abs(ay - y);
-    # //		} 
-    # //		return -1;
-    # //	}
-    # } 
-
 
 if __name__ == "__main__":
     U = actions = ['N', 'S', 'E', 'W', 'ST']
@@ -986,7 +571,7 @@ if __name__ == "__main__":
         state_ground_truth = pomcp.root.sample_state_from_belief()
         print(state_ground_truth, "current state")
         obs_current_node = pomcp.get_observation(state_ground_truth)
-        max_steps = 20
+        max_steps = 5
         while step < max_steps:
             # environment_observation = observe()
             ACP_step = {} # comformal_prediction() #TODO
