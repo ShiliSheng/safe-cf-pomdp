@@ -129,7 +129,7 @@ class POMCPNode:
         return state in self.belief
     
 class POMCP:
-    def __init__(self, pomdp, constant = 1000, maxDepth = 100, end_states = set(), target = set()):
+    def __init__(self, pomdp, constant = 1000, maxDepth = 100, end_states = set(), target = set(), horizon = 5):
 
         # def __init__(self, initial_belief, actions, robot_state_action_map, state_to_observation, state_action_reward_map, 
         #              end_states, constant = 1000, maxDepth = 100, targets = set()):
@@ -137,7 +137,7 @@ class POMCP:
         # c (float): Parameter that controls the importance of exploration in the UCB heuristic. Default value is 1.
         # no_particles (int): Controls the maximum number of particles that will be kept at each node 
         #                       and the number of particles that will be sampled from the posterior belief after an action is taken.
-        self.numSimulations = 2 ** 4
+        self.numSimulations = 2 ** 6
         self.gamma = 0.95
         self.e = 0.05
         self.noParticles = 1200
@@ -161,7 +161,7 @@ class POMCP:
         self.stateSuccessorArryList = {}
         self.stateSuccessorCumProb = {}
         self.shiledLevel = 1
-
+        self.horizon = 5
         self.initializePOMCP()
 
     def initializePOMCP(self):
@@ -300,7 +300,7 @@ class POMCP:
             return 0
         
         actionIndex = self.greedyUCB(vnode, True)
-        if self.shiledLevel == ON_THE_FLY:
+        if self.TreeDepth <= self.horizon and self.shiledLevel == ON_THE_FLY:
             if not vnode.have_state_in_belief_support(state): 
                 print("checking", self.TreeDepth)
                 vnode.add_particle(state)
@@ -309,8 +309,9 @@ class POMCP:
                     parentActionIndex = qparent.getH()
                     vparent = qparent.getParent() 
                     vparent.add_illegal_action_index(parentActionIndex)
-                    print("pruning", vparent.belief.keys(), parentActionIndex)
-
+                    print("pruning", vparent.belief.keys(), self.get_observation_from_beleif(vnode.belief), parentActionIndex)
+                    for x in self.pomdp.winning_obs:
+                        print(x)
         if self.TreeDepth >= 1:
             vnode.add_particle(state)
 
@@ -318,7 +319,12 @@ class POMCP:
         total_reward = self.simulateQ(state, qnode, actionIndex)
         vnode.increaseV(total_reward)
         return total_reward
+        
     
+    def get_observation_from_beleif(self, belief):
+        for state in belief:
+            return self.get_observation(state)
+        
     def simulateQ(self, state, qnode, actionIndex):
         delayed_reward = 0
         nextState = self.step(state, actionIndex)
@@ -539,7 +545,7 @@ if __name__ == "__main__":
     WS_transition[3] = [(-2, -2), (-2, 0), (-2, 2)]    # W
     WS_transition[4] = [(0, 0)]                         # ST
 
-    obstacles =  [(5, 1), (7, 3), (17, 7)]
+    obstacles =  [(5, 1), (7, 3), (17, 7), (7, 9)]
     target = [(19, 19)]
     end_states = set([(19,1)])
 
@@ -569,19 +575,20 @@ if __name__ == "__main__":
     for _ in range(num_episodes):
         pomcp.reset_root()
         state_ground_truth = pomcp.root.sample_state_from_belief()
+        state_ground_truth = (7,7)
         print(state_ground_truth, "current state")
         obs_current_node = pomcp.get_observation(state_ground_truth)
-        max_steps = 5
+        max_steps = 3
         while step < max_steps:
             # environment_observation = observe()
-            ACP_step = {} # comformal_prediction() #TODO
+            ACP_step = [] # comformal_prediction() #TODO
             # self.compute_winning_region() # is winning region indepent of current belief ? @pian
-            # obs_mdp, Winning_observation = pomcp.pomdp.online_compute_winning_region(obs_current_node, AccStates, observation_successor_map, H, ACP_step)
+            obs_mdp, Winning_observation = pomcp.pomdp.online_compute_winning_region(obs_current_node, AccStates, observation_successor_map, H, ACP_step)
             actionIndex = pomcp.select_action()
             next_state_ground_truth = pomcp.step(state_ground_truth, actionIndex)
             reward = pomcp.step_reward(state_ground_truth, actionIndex)
             obs_current_node = pomcp.get_observation(next_state_ground_truth)
-            print("step", step, "s", "action", actions[actionIndex], state_ground_truth, "s'", next_state_ground_truth, "observation", obs_current_node)
+            print("===================step", step, "s", "action", actions[actionIndex], state_ground_truth, "s'", next_state_ground_truth, "observation", obs_current_node)
             pomcp.update(actionIndex, obs_current_node)
             state_ground_truth = next_state_ground_truth
             step += 1

@@ -30,6 +30,7 @@ class Model:
         self.pomcp = None
         self.end_states = end_states
         self.winning_obs = set()
+        self.write_transitons()
         #state_observation_map
     def set_transition_prob(self, fnode, actionIndex):
         u = self.actions[actionIndex]
@@ -64,7 +65,7 @@ class Model:
         for fnode in self.robot_nodes: 
             for action_index, action in enumerate(self.actions):
                 self.set_transition_prob(fnode, action_index)
-    
+
     def display_state_transiton(self):
         print("++++++++++ state transition")
         for state in self.robot_state_action_map:
@@ -75,6 +76,17 @@ class Model:
         for actionIndex, u in enumerate(self.actions):
             for state in self.state_tra[actionIndex]:
                 print(state, u, self.state_tra[actionIndex][state])
+
+    def write_transitons(self):
+        file = open('data/state_trainsiton.dat','w')
+        for state in self.robot_state_action_map:
+            for actionIndex in self.robot_state_action_map[state]:
+                u = self.actions[actionIndex]
+                file.write('%s,%s,%s\n'%(state, u, self.state_tra[actionIndex][state]))
+                
+        file = open('data/state_observation.dat','w')
+        for state, obs in self.state_observation_map.items():
+            file.write('%s,%s\n'%(state, obs))
 
     def display_state_observation(self):
         for state, obs in self.state_observation_map.items():
@@ -175,7 +187,7 @@ class Model:
         # Build the N-step reachable support belief MDP, the target set for the support belief MDP is given by AccStates (which is computed offline)
         # ACP_step: computed adaptive conformal prediction constraints
         if not ACP:
-            ACP = [()] * H
+            ACP = [()] * (H+1)
             
         obstacle_static = set(self.obstacles)
         obstacle_new = dict()
@@ -282,40 +294,43 @@ class Model:
         self.winning_obs = Winning_obs
         return obs_mdp, Winning_obs
 
-    def check_winning(self, support_belief = [], actionIndex = 0, current_state = -1):
-        #----Randomly choose the last step belief state-------------
-        belief = (1/4, 1/4, 1/4, 1/4)
+    def check_winning(self, next_obs, time):
+        return (next_obs, time) in self.winning_obs
 
-        #---The support states and the corresponding observation are-----
-        if not support_belief:
-            support_belief = [((5, 5), 1), 
-                            ((5, 7), 1),
-                            ((7, 5), 1),
-                            ((7, 7), 1),
-                            ]
+    # def check_winning(self, support_belief = [], actionIndex = 0, current_state = -1):
+    #     #----Randomly choose the last step belief state-------------
+    #     belief = (1/4, 1/4, 1/4, 1/4)
+
+    #     #---The support states and the corresponding observation are-----
+    #     if not support_belief:
+    #         support_belief = [((5, 5), 1), 
+    #                         ((5, 7), 1),
+    #                         ((7, 5), 1),
+    #                         ((7, 7), 1),
+    #                         ]
             
-        observation = self.get_observation_from_belief(support_belief) # how to get observation of belief support
-        print(observation)
-        obs_time = observation[1]
+    #     observation = self.get_observation_from_belief(support_belief) # how to get observation of belief support
+    #     print(observation)
+    #     obs_time = observation[1]
 
 
-        #----Randomly choose an action---------
-        action = self.actions[actionIndex]
+    #     #----Randomly choose an action---------
+    #     action = self.actions[actionIndex]
 
-        #----Make an observation in robot workspace------
-        # how to get next obs        
-        # next_stateWS = self.step(current_state, actionIndex)
-        # observation_WS_next = self.state_observation_map[next_stateWS]
-        observation_WS_next = (10, 6)
-        oc_next = obs_time+1
-        observation_next = (observation_WS_next, oc_next)
-        print(observation_next)
+    #     #----Make an observation in robot workspace------
+    #     # how to get next obs        
+    #     # next_stateWS = self.step(current_state, actionIndex)
+    #     # observation_WS_next = self.state_observation_map[next_stateWS]
+    #     observation_WS_next = (10, 6)
+    #     oc_next = obs_time+1
+    #     observation_next = (observation_WS_next, oc_next)
+    #     print(observation_next)
 
-        #----Check winning-------
-        if observation_next.issubset(self.Winning_obs):
-            print('The belief support is a winning state!')
-        else:
-            print('The belief support is a failure!')
+    #     #----Check winning-------
+    #     if observation_next.issubset(self.winning_obs):
+    #         print('The belief support is a winning state!')
+    #     else:
+    #         print('The belief support is a failure!')
 
 
 if __name__ == "__main__":
@@ -336,7 +351,7 @@ if __name__ == "__main__":
     WS_transition[3] = [(-2, -2), (-2, 0), (-2, 2)]    # W
     WS_transition[4] = [(0, 0)]                         # ST
 
-    obstacles =  [(5, 1), (7, 3), (17, 7), (9,5)]
+    obstacles =  [(5, 1), (7, 13), (17, 7), (7,9)]
     target = [(19, 19)]
     end_states = set([(19,1)])
 
@@ -346,7 +361,8 @@ if __name__ == "__main__":
             node = (i, j)
             robot_nodes.add(node) 
 
-    initial_belief_support = [((5, 5), 0), 
+    initial_belief_support = [
+                            ((5, 5), 0), 
                             ((5, 7), 0),
                             ((7, 5), 0),
                             ((7, 7), 0),
@@ -368,6 +384,3 @@ if __name__ == "__main__":
     ACP_step = dict() #conformal prediction constraints
     obs_mdp, Winning_observation = pomdp.online_compute_winning_region(obs_current_node, AccStates, observation_successor_map, H, ACP_step)
     #---winning region computation ends---
-
-    # for key, value in pomdp.observation_state_map.items():
-    #     print(key, value)
