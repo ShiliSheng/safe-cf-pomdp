@@ -572,16 +572,34 @@ if __name__ == "__main__":
     discounted_reward = 0
     undiscounted_redward = 0
     num_episodes = 1
+    max_steps = 3
+
+    # initial_delta = 0.95
+    # acp_gamma = 0.95
+    # delta = [[0] * max_steps for _ in range(H)]
+    # e = [[0] * max_steps for _ in range(H)]
+    # for tau in range(1, H+1):
+    #     delta[tau][0] = initial_delta
+            # // delta[tau][0] = initial_delta
+
     for _ in range(num_episodes):
         pomcp.reset_root()
         state_ground_truth = pomcp.root.sample_state_from_belief()
         state_ground_truth = (7,7)
         print(state_ground_truth, "current state")
         obs_current_node = pomcp.get_observation(state_ground_truth)
-        max_steps = 3
         while step < max_steps:
-            # environment_observation = observe()
-            ACP_step = [] # comformal_prediction() #TODO
+
+            # Y = [1] #observe()
+            # ACP_step = [] # comformal_prediction() #TODO
+            # for tau in range(1, H+1):
+            #     delta[tau][step + 1] = delta[tau][step] + acp_gamma * (initial_delta * e[tau][step])
+            #     R[tau][step] =  dist(Y, estimated_Y[tau][step-tau])
+            #     q = ceil((step+1) * (1 - delta[tau][step+1]))
+            #     C[tau][step+1] = sorted([R[tau][k] for k in range(tau, step+1)])[q]
+            # ACP
+
+
             # self.compute_winning_region() # is winning region indepent of current belief ? @pian
             obs_mdp, Winning_observation = pomcp.pomdp.online_compute_winning_region(obs_current_node, AccStates, observation_successor_map, H, ACP_step)
             actionIndex = pomcp.select_action()
