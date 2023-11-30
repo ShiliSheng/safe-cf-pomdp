@@ -351,9 +351,7 @@ if __name__ == "__main__":
     WS_transition[3] = [(-2, -2), (-2, 0), (-2, 2)]    # W
     WS_transition[4] = [(0, 0)]                         # ST
 
-    obstacles = [
-                (3, 1) # obs = (2, 2)
-                ]
+    obstacles = [(5, 1), (5, 5), (7, 3), (17, 7), (17, 19), (19, 19)]
     target = [(19, 19)]
     end_states = set([(19,1)])
 
@@ -375,7 +373,7 @@ if __name__ == "__main__":
 
     motion_mdp, AccStates = pomdp.compute_accepting_states()
 
-    H = 2 #Horizon
+    H = 3 #Horizon
     observation_successor_map = pomdp.compute_H_step_space(H)
 
     #---Online planning starts----

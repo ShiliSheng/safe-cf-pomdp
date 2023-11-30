@@ -31,9 +31,12 @@ class LSTMModel(nn.Module):
         return output
 
 class Predictor():
-    def __init__(self):
+    def __init__(self, history_length, prediction_legnth, input_size):
         # Create an instance of the model
-        self.model = LSTMModel(input_size, hidden_size, output_size * prediction_length)
+        pass
+
+    def load_trained_model(self, LSTM_file):
+        self.model = LSTMModel(input_size, hidden_size, output_size * prediction_length)        
         # Check if GPU is available
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         # Load the saved model weights

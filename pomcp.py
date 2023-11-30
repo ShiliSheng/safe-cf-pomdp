@@ -7,6 +7,7 @@ import time
 import math
 import random
 from model import Model
+from predictor import Predictor
 from collections import defaultdict
 # class POMCPBelief:
 #     def __init__(self) -> None:
@@ -527,6 +528,24 @@ class POMCP:
                 self.action2Index[action] = i
         return self.action2Index.get(action, -1)
 
+
+def get_cf_score(A, B):
+    score = 0
+    num_agents = len(A)
+    for i in range(num_agents):
+        score += (A[i][0] - B[i][0]) ** 2 + (A[i][1] - B[i][0]) ** 2
+    return score ** (0.5)
+
+def get_restritive_region(Y, radius):
+    res = []
+    num_agents = len(Y)
+    for (x, y) in Y:
+        for dx in range(-radius, radius, 0.1):
+            for dy in range(-radius, radius, 0.1):
+                nx, ny = x + dx, y + dy
+                res.append(nx, ny)
+    return res;
+
 if __name__ == "__main__":
     U = actions = ['N', 'S', 'E', 'W', 'ST']
     C = cost = [3300, 3, 3, 3, 1]
@@ -574,13 +593,25 @@ if __name__ == "__main__":
     num_episodes = 1
     max_steps = 3
 
-    # initial_delta = 0.95
-    # acp_gamma = 0.95
-    # delta = [[0] * max_steps for _ in range(H)]
-    # e = [[0] * max_steps for _ in range(H)]
-    # for tau in range(1, H+1):
-    #     delta[tau][0] = initial_delta
-            # // delta[tau][0] = initial_delta
+    #Settings for LSTM trajectory prediction
+    prediction_model = Predictor()
+
+    # Settings for conformal prediction
+    target_failure_prob_delta = 0.95
+    acp_learing_gamma = 0.95
+    failure_prob_delta = [[0] * max_steps for _ in range(H + 1)]
+    error = [[0] * max_steps for _ in range(H + 1)]
+    cf_scores = [[0] * max_steps for _ in range(H + 1)]
+    constraints = [[0] * max_steps for _ in range(H + 1)]
+    estimation_moving_agents = [[0] * max_steps for _ in range(H + 1)] # TODO dimimensions ?
+    dynamic_agents = []
+    #           agent1, anget2  angentN
+    # t=0       (x,y)       .        .
+    # ...           .       .        .  
+    # t=inf         .       .       (x,y)
+
+    for tau in range(1, H+1):
+        failure_prob_delta[tau][0] = target_failure_prob_delta
 
     for _ in range(num_episodes):
         pomcp.reset_root()
@@ -588,27 +619,34 @@ if __name__ == "__main__":
         state_ground_truth = (7,7)
         print(state_ground_truth, "current state")
         obs_current_node = pomcp.get_observation(state_ground_truth)
-        while step < max_steps:
+        cur_time = 0
+        while cur_time < max_steps:
+            #observation_moving_agents [(x1, x2), ... (xn, yn)]
+            observation_moving_agents = [(0, 0)] #observe() //TODO need to read in something or randomly generate somthing
+            estimation = prediction_model.predict(observation_moving_agents) # TODO
+            for tau in range(1, H+1):
+                estimation_moving_agents[tau][cur_time] = estimation[tau-1] #TODO
 
-            # Y = [1] #observe()
-            # ACP_step = [] # comformal_prediction() #TODO
-            # for tau in range(1, H+1):
-            #     delta[tau][step + 1] = delta[tau][step] + acp_gamma * (initial_delta * e[tau][step])
-            #     R[tau][step] =  dist(Y, estimated_Y[tau][step-tau])
-            #     q = ceil((step+1) * (1 - delta[tau][step+1]))
-            #     C[tau][step+1] = sorted([R[tau][k] for k in range(tau, step+1)])[q]
+            ACP_step = {} # comformal_prediction() #TODO
+            for tau in range(1, H+1):
+                failure_prob_delta[tau][cur_time + 1] = failure_prob_delta[tau][cur_time] + acp_learing_gamma * (target_failure_prob_delta * error[tau][cur_time])
+                cf_scores[tau][cur_time] =  get_cf_score(observation_moving_agents, estimation_moving_agents[tau][cur_time-tau]) 
+                q = math.ceil((cur_time+1) * (1 - failure_prob_delta[tau][cur_time+1]))
+                constriants =[tau][cur_time+1] = sorted([cf_scores[tau][k] for k in range(tau, cur_time+1)])[q] #TODO
+            
+            for tau in range(1, H+1):
+                ACP_step[tau] = get_restritive_region(estimation_moving_agents[tau][cur_time], constraints[tau][cur_time+1])
+            ACP_step = {}
             # ACP
-
-
             # self.compute_winning_region() # is winning region indepent of current belief ? @pian
             obs_mdp, Winning_observation = pomcp.pomdp.online_compute_winning_region(obs_current_node, AccStates, observation_successor_map, H, ACP_step)
             actionIndex = pomcp.select_action()
             next_state_ground_truth = pomcp.step(state_ground_truth, actionIndex)
             reward = pomcp.step_reward(state_ground_truth, actionIndex)
             obs_current_node = pomcp.get_observation(next_state_ground_truth)
-            print("===================step", step, "s", "action", actions[actionIndex], state_ground_truth, "s'", next_state_ground_truth, "observation", obs_current_node)
+            print("===================step", cur_time, "s", "action", actions[actionIndex], state_ground_truth, "s'", next_state_ground_truth, "observation", obs_current_node)
             pomcp.update(actionIndex, obs_current_node)
             state_ground_truth = next_state_ground_truth
-            step += 1
+            cur_time += 1
             discounted_reward += pomcp.gamma * reward
             undiscounted_redward += reward
