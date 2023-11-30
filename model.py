@@ -282,7 +282,7 @@ class Model:
         for S_f in Obs_Sf:
             for MEC in S_f:
                 for sf in MEC:
-                    if sf[1] not in set(frozenset({'obstacle'})):
+                    if sf[1] not in {frozenset({'obstacle'})}:
                         Winning_obs.add(sf[0]) 
         print('Number of winning states in observation space: %s' % len(Winning_obs))
 
