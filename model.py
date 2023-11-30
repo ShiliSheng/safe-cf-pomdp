@@ -5,7 +5,7 @@ from networkx.classes.digraph import DiGraph
 import pickle
 import time
 import random 
-
+import collections
 class Model:
     def __init__(self, robot_nodes, actions, cost, transition, transiton_prob, initial_belief,
                  obstacles = [], target = [], end_states = set()):
@@ -188,12 +188,12 @@ class Model:
         # ACP_step: computed adaptive conformal prediction constraints
         if not ACP:
             ACP = [()] * (H+1)
-            
+        print("++++++++++++++++++++++++",self.obstacles)
         obstacle_static = set(self.obstacles)
         obstacle_new = dict()
         for i in range(H):
             obstacle_new[i+1] = obstacle_static.union(ACP[i+1])
-
+        print(obstacle_new,"=====================new_obstacles")
         #----add time counter----
         obs_initial_node_count = (obs_initial_node, 0)
         H_step_obs = observation_successor_map[obs_initial_node, H]
@@ -351,7 +351,9 @@ if __name__ == "__main__":
     WS_transition[3] = [(-2, -2), (-2, 0), (-2, 2)]    # W
     WS_transition[4] = [(0, 0)]                         # ST
 
-    obstacles =  [(5, 1), (7, 13), (17, 7), (7,9)]
+    obstacles = [
+                (3, 1) # obs = (2, 2)
+                ]
     target = [(19, 19)]
     end_states = set([(19,1)])
 
@@ -362,10 +364,7 @@ if __name__ == "__main__":
             robot_nodes.add(node) 
 
     initial_belief_support = [
-                            ((5, 5), 0), 
-                            ((5, 7), 0),
-                            ((7, 5), 0),
-                            ((7, 7), 0),
+                            (5, 1)
                             ]
     initial_belief = {}
     for state in initial_belief_support:
@@ -376,11 +375,35 @@ if __name__ == "__main__":
 
     motion_mdp, AccStates = pomdp.compute_accepting_states()
 
-    H = 5 #Horizon
+    H = 2 #Horizon
     observation_successor_map = pomdp.compute_H_step_space(H)
 
     #---Online planning starts----
-    obs_current_node = (6, 6)
+    # obs_current_node = (6, 6)
+    obs_current_node = (6, 2)
     ACP_step = dict() #conformal prediction constraints
     obs_mdp, Winning_observation = pomdp.online_compute_winning_region(obs_current_node, AccStates, observation_successor_map, H, ACP_step)
     #---winning region computation ends---
+
+    # visited = set()
+    # queue = collections.deque()
+    # for state in initial_belief_support:
+    #     queue.append(state)
+    #     visited.add(state)
+    # while queue:
+    #     for i in range(len(queue)):
+    #         cur = queue.popleft();
+    #         print(i, cur)
+    #         for a in range(len(pomdp.actions)):
+    #             for nxt in pomdp.robot_state_action_map[cur][a]:
+    #                 if nxt in visited: continue
+    #                 queue.append(nxt)
+    #                 visited.add(nxt)
+    #     print("====")
+    
+    print(Winning_observation)
+
+    for obstacle in obstacles:
+        observation = pomdp.state_observation_map[obstacle]
+        if (observation, 1) in Winning_observation:
+            print("error", obstacle, observation)
