@@ -386,7 +386,7 @@ if __name__ == "__main__":
     WS_transition[3] = [(-2, -2), (-2, 0), (-2, 2)]    # W
     WS_transition[4] = [(0, 0)]                         # ST
 
-    obstacles =  [(3, 7)]
+    obstacles =  [(3, 7), (5, 5)]
     target = [(17, 17)]
     end_states = set([(19,1)])
 
