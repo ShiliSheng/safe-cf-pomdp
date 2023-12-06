@@ -3,12 +3,16 @@ from MDP_TG.dra import Dra, Dfa, Product_Dra, Product_Dfa
 from MDP_TG.vi4wr import syn_plan_prefix, syn_plan_prefix_dfa
 from networkx.classes.digraph import DiGraph
 import pickle
+import numpy as np
 import time
 import math
 import random
 from model import Model
 from predictor import Predictor
 from collections import defaultdict
+import pandas as pd
+from itertools import chain
+
 # class POMCPBelief:
 #     def __init__(self) -> None:
 #         self.particles = []
@@ -138,7 +142,7 @@ class POMCP:
         # c (float): Parameter that controls the importance of exploration in the UCB heuristic. Default value is 1.
         # no_particles (int): Controls the maximum number of particles that will be kept at each node 
         #                       and the number of particles that will be sampled from the posterior belief after an action is taken.
-        self.numSimulations = 2 ** 6
+        self.numSimulations = 2 ** 12
         self.gamma = 0.95
         self.e = 0.05
         self.noParticles = 1200
@@ -291,6 +295,7 @@ class POMCP:
                 print("==MCTSMCT after num simulation", n)
         if self.verbose >= 1:
             print("finishing all simulations", self.numSimulations)
+        
 
     def simulateV(self, state, vnode):
         self.PeakTreeDepth = self.TreeDepth
@@ -303,16 +308,16 @@ class POMCP:
         actionIndex = self.greedyUCB(vnode, True)
         if self.TreeDepth <= self.horizon and self.shiledLevel == ON_THE_FLY:
             if not vnode.have_state_in_belief_support(state): 
-                print("checking", self.TreeDepth)
+                # print("checking", self.TreeDepth)
+                if (self.TreeDepth == 1):
+                    print(self.TreeDepth, state, vnode.getH())
                 vnode.add_particle(state)
                 if not self.is_current_belief_winning(vnode, self.TreeDepth): #TODO
                     qparent = vnode.getParent() 
                     parentActionIndex = qparent.getH()
                     vparent = qparent.getParent() 
                     vparent.add_illegal_action_index(parentActionIndex)
-                    print("pruning", vparent.belief.keys(), self.get_observation_from_beleif(vnode.belief), parentActionIndex)
-                    for x in self.pomdp.winning_obs:
-                        print(x)
+                    
         if self.TreeDepth >= 1:
             vnode.add_particle(state)
 
@@ -529,12 +534,14 @@ class POMCP:
         return self.action2Index.get(action, -1)
 
 
-def get_cf_score(A, B):
-    score = 0
-    num_agents = len(A)
-    for i in range(num_agents):
-        score += (A[i][0] - B[i][0]) ** 2 + (A[i][1] - B[i][0]) ** 2
-    return score ** (0.5)
+def get_cf_score(dynamic_agents, cur_time, estimation):
+    values = dynamic_agents.loc[cur_time,:].values[2:]
+    return np.linalg.norm(values - estimation)
+    # score = 0
+    # num_agents = get_num_agents(dynamic_agents)
+    # for i in range(2, num_agents, 2):
+    #     score += (dynamic_agents.loc[cur_time, ] - B[i][0]) ** 2 + (A[i][1] - B[i][0]) ** 2
+    # return score ** (0.5)
 
 def get_restritive_region(Y, radius):
     res = []
@@ -547,8 +554,15 @@ def get_restritive_region(Y, radius):
     return res;
 
 if __name__ == "__main__":
+    #Settings for LSTM trajectory prediction
+    prediction_model = Predictor()
+    prediction_model.load_model('./OpenTraj/datasets/ETH/seq_eth/model_weights.pth')
+    history_length = prediction_model.history_length
+    H = prediction_length = prediction_model.prediction_length
+
+    # POMDP
     U = actions = ['N', 'S', 'E', 'W', 'ST']
-    C = cost = [3300, 3, 3, 3, 1]
+    C = cost = [34466664, 3, 3, 3, 1]
 
     transition_prob = [[] for _ in range(len(actions))]
     transition_prob[0] = [0.1, 0.8, 0.1] # S
@@ -564,7 +578,7 @@ if __name__ == "__main__":
     WS_transition[3] = [(-2, -2), (-2, 0), (-2, 2)]    # W
     WS_transition[4] = [(0, 0)]                         # ST
 
-    obstacles =  [(5, 1), (7, 3), (17, 7), (7, 9)]
+    obstacles =  [(3, 7)]
     target = [(19, 19)]
     end_states = set([(19,1)])
 
@@ -574,7 +588,7 @@ if __name__ == "__main__":
             node = (i, j)
             robot_nodes.add(node) 
 
-    initial_belief_support = [(5,5), (5,7), (7,5), (7,7)]
+    initial_belief_support = [(5,5) ]
     initial_belief = {}
     for state in initial_belief_support:
         initial_belief[state] = 1 / len(initial_belief_support)
@@ -585,68 +599,91 @@ if __name__ == "__main__":
     pomcp = POMCP(pomdp)
 
     motion_mdp, AccStates = pomcp.pomdp.compute_accepting_states() 
-    H = 5
-    observation_successor_map = pomcp.pomdp.compute_H_step_space(H)
+    observation_successor_map = pomcp.pomdp.compute_H_step_space(motion_mdp, H)
     step = 0
     discounted_reward = 0
     undiscounted_redward = 0
     num_episodes = 1
-    max_steps = 3
-
-    #Settings for LSTM trajectory prediction
-    prediction_model = Predictor()
+    max_steps = 5
 
     # Settings for conformal prediction
-    target_failure_prob_delta = 0.95
-    acp_learing_gamma = 0.95
-    failure_prob_delta = [[0] * max_steps for _ in range(H + 1)]
-    error = [[0] * max_steps for _ in range(H + 1)]
-    cf_scores = [[0] * max_steps for _ in range(H + 1)]
-    constraints = [[0] * max_steps for _ in range(H + 1)]
-    estimation_moving_agents = [[0] * max_steps for _ in range(H + 1)] # TODO dimimensions ?
-    dynamic_agents = []
+    path = "./OpenTraj/datasets/ETH/seq_eth/"
+    dynamic_agents =  pd.read_csv(path + "test_dynammic_agents.csv")
+    # print(dynamic_agents.head())
     #           agent1, anget2  angentN
     # t=0       (x,y)       .        .
     # ...           .       .        .  
     # t=inf         .       .       (x,y)
-
+    num_agents_tracked = len(dynamic_agents.columns) // 2 -1
+    target_failure_prob_delta = 0.1
+    acp_learing_gamma = 0.08
+    failure_prob_delta = [[0] * (H+1) for _ in range(max_steps + 1)]
+    error = [[0] * (H+1) for _ in range(max_steps + 1)]
+    cf_scores = [[0] * (H+1) for _ in range(max_steps + 1)]
+    constraints = [[0] * (H+1) for _ in range(max_steps + 1)]
+    estimation_moving_agents = [[0 for _ in range(num_agents_tracked * 2)] * (H+1) for _ in range(max_steps + 1)] 
+    
     for tau in range(1, H+1):
-        failure_prob_delta[tau][0] = target_failure_prob_delta
+        failure_prob_delta[0][tau] = target_failure_prob_delta
 
+    cmt = 0
     for _ in range(num_episodes):
         pomcp.reset_root()
         state_ground_truth = pomcp.root.sample_state_from_belief()
-        state_ground_truth = (7,7)
         print(state_ground_truth, "current state")
         obs_current_node = pomcp.get_observation(state_ground_truth)
+        print("current observation", obs_current_node)
         cur_time = 0
         while cur_time < max_steps:
-            #observation_moving_agents [(x1, x2), ... (xn, yn)]
-            observation_moving_agents = [(0, 0)] #observe() //TODO need to read in something or randomly generate somthing
-            estimation = prediction_model.predict(observation_moving_agents) # TODO
-            for tau in range(1, H+1):
-                estimation_moving_agents[tau][cur_time] = estimation[tau-1] #TODO
+            # line 3, 4 TODO figure index
+            estimation = prediction_model.predict(dynamic_agents, cur_time)
+            print(estimation) 
+            for i, row in enumerate(estimation):
+                estimation_moving_agents[cur_time][i+1] = row
 
-            ACP_step = {} # comformal_prediction() #TODO
-            for tau in range(1, H+1):
-                failure_prob_delta[tau][cur_time + 1] = failure_prob_delta[tau][cur_time] + acp_learing_gamma * (target_failure_prob_delta * error[tau][cur_time])
-                cf_scores[tau][cur_time] =  get_cf_score(observation_moving_agents, estimation_moving_agents[tau][cur_time-tau]) 
-                q = math.ceil((cur_time+1) * (1 - failure_prob_delta[tau][cur_time+1]))
-                constriants =[tau][cur_time+1] = sorted([cf_scores[tau][k] for k in range(tau, cur_time+1)])[q] #TODO
-            
-            for tau in range(1, H+1):
-                ACP_step[tau] = get_restritive_region(estimation_moving_agents[tau][cur_time], constraints[tau][cur_time+1])
-            ACP_step = {}
-            # ACP
+            # ACP_step = {} # comformal_prediction() 
+            for tau in range(1, H + 1):
+                if cur_time < tau:
+                    continue
+                #Line 7
+                X = dynamic_agents.loc[cur_time,:].values[2:]
+                print(cur_time, tau, )
+                Y = estimation_moving_agents[cur_time-tau][tau] # TODO
+                print(Y)
+                cf_scores[cur_time][tau] = np.linalg.norm(X - Y)
+
+                #Line 6
+                error[cur_time][tau] = 0 if cf_scores[cur_time][tau] <= constraints[cur_time][tau] else 1
+                failure_prob_delta[cur_time + 1][tau] = failure_prob_delta[cur_time][tau] + \
+                                                        acp_learing_gamma * (target_failure_prob_delta * error[cur_time][tau])
+                #Line 8
+                
+                q = math.ceil((cur_time+1 - tau) * (1 - failure_prob_delta[cur_time+1][tau]))
+                # Line 9
+                values = [cf_scores[k][tau] for k in range(tau, cur_time+1)] + [float("inf")]
+                values.sort()
+                print(len(values), q)
+                radius = values[q-1]
+                constraints[cur_time + 1][tau] = radius
+                # = np.quantile(values, 0.1, interpolation='higher')
+            print(constraints[cur_time + 1][tau], "_______________")
+
+            ACP_step = pomdp.build_restrictive_region(estimation_moving_agents[cur_time], constraints[cur_time+1][tau], H)
+            # ACP_step = {}
+            # for tau in range(1, H + 1): #TODO
+                # ACP_step[tau] = get_restritive_region(estimation_moving_agents[cur_time][tau], constraints[tau][cur_time+1])
+
             # self.compute_winning_region() # is winning region indepent of current belief ? @pian
             obs_mdp, Winning_observation = pomcp.pomdp.online_compute_winning_region(obs_current_node, AccStates, observation_successor_map, H, ACP_step)
             actionIndex = pomcp.select_action()
             next_state_ground_truth = pomcp.step(state_ground_truth, actionIndex)
             reward = pomcp.step_reward(state_ground_truth, actionIndex)
             obs_current_node = pomcp.get_observation(next_state_ground_truth)
-            print("===================step", cur_time, "s", "action", actions[actionIndex], state_ground_truth, "s'", next_state_ground_truth, "observation", obs_current_node)
+            print("==================================step", cur_time, "s", "action", actions[actionIndex], state_ground_truth, "s'", next_state_ground_truth, "observation", obs_current_node)
             pomcp.update(actionIndex, obs_current_node)
             state_ground_truth = next_state_ground_truth
             cur_time += 1
             discounted_reward += pomcp.gamma * reward
             undiscounted_redward += reward
+
+            print(cmt,"DDD")
