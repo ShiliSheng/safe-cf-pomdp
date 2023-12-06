@@ -6,6 +6,9 @@ import pickle
 import time
 import random 
 import collections
+import math
+from collections import defaultdict
+import numpy as np
 # def print(*args, **kwargs):
 #     return
 class Model:
@@ -350,6 +353,21 @@ class Model:
                     queue.append(nxt)
                     visited.add(nxt)
 
+    def build_restrictive_region(self, estimations, radius, H):
+        ACP = defaultdict(list)
+        dx = 1
+        dy = 1
+        for tau in range(1, H + 1):
+            for i in range(len(estimations[tau]) // 2):
+                x, y = estimations[tau][i], estimations[tau][i+1]
+                lx, rx = math.floor(x - radius), math.ceil(x + radius)
+                by, uy = math.floor(y - radius), math.ceil(y + radius)
+                for nx in np.arange(lx, rx, dx):
+                    for ny in np.arange(by, uy, dy):
+                        if (nx, ny) in self.robot_state_action_map:
+                            ACP[tau].append((nx, ny))
+        return ACP
+
 if __name__ == "__main__":
     U = actions = ['N', 'S', 'E', 'W', 'ST']
     C = cost = [3, 3, 3, 3, 1]
@@ -395,6 +413,3 @@ if __name__ == "__main__":
     obs_current_node = (6, 6)
     ACP_step = dict() #conformal prediction constraints
     obs_mdp, Winning_observation = pomdp.online_compute_winning_region(obs_current_node, AccStates, observation_successor_map, H, ACP_step)
-
-
-    pomdp.find_next_states((5,5), 0)
