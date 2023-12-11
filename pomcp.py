@@ -12,6 +12,9 @@ from predictor import Predictor
 from collections import defaultdict
 import pandas as pd
 from itertools import chain
+from sortedcontainers import SortedList
+import matplotlib.pyplot as plt
+import matplotlib.patches as patches
 
 # class POMCPBelief:
 #     def __init__(self) -> None:
@@ -562,7 +565,7 @@ if __name__ == "__main__":
 
     # POMDP
     U = actions = ['N', 'S', 'E', 'W', 'ST']
-    C = cost = [34466664, 3, 3, 3, 1]
+    C = cost = [-1, -1, -1, -1, -1]
 
     transition_prob = [[] for _ in range(len(actions))]
     transition_prob[0] = [0.1, 0.8, 0.1] # S
@@ -588,7 +591,7 @@ if __name__ == "__main__":
             node = (i, j)
             robot_nodes.add(node) 
 
-    initial_belief_support = [(5,5) ]
+    initial_belief_support = [(5,5), (5,7)]
     initial_belief = {}
     for state in initial_belief_support:
         initial_belief[state] = 1 / len(initial_belief_support)
@@ -617,13 +620,14 @@ if __name__ == "__main__":
     num_agents_tracked = len(dynamic_agents.columns) // 2 -1
     target_failure_prob_delta = 0.1
     acp_learing_gamma = 0.08
-    failure_prob_delta = [[0] * (H+1) for _ in range(max_steps + 1)]
-    error = [[0] * (H+1) for _ in range(max_steps + 1)]
-    cf_scores = [[0] * (H+1) for _ in range(max_steps + 1)]
-    constraints = [[0] * (H+1) for _ in range(max_steps + 1)]
-    estimation_moving_agents = [[0 for _ in range(num_agents_tracked * 2)] * (H+1) for _ in range(max_steps + 1)] 
-    
-    for tau in range(1, H+1):
+    failure_prob_delta = [[0] * (H+1) for _ in range(max_steps + 10)]
+    error = [[0] * (H+1) for _ in range(max_steps + 10)]
+    constraints = [[0] * (H+1) for _ in range(max_steps + 10)]    
+    estimation_moving_agents = [[0 for _ in range(num_agents_tracked * 2)] * (H+1) for _ in range(max_steps + 10)] 
+    # cf_scores = [[0] * (H+1) for _ in range(max_steps + 10)]
+    cf_scores = defaultdict(lambda: SortedList([float('inf')]))
+
+    for tau in range(1, H + 1):
         failure_prob_delta[0][tau] = target_failure_prob_delta
 
     cmt = 0
@@ -633,57 +637,77 @@ if __name__ == "__main__":
         print(state_ground_truth, "current state")
         obs_current_node = pomcp.get_observation(state_ground_truth)
         print("current observation", obs_current_node)
-        cur_time = 0
+        cur_time = -1
+
         while cur_time < max_steps:
-            # line 3, 4 TODO figure index
+            cur_time += 1
+
+            # Line 3, 4 TODO preprocessing
             estimation = prediction_model.predict(dynamic_agents, cur_time)
-            print(estimation) 
             for i, row in enumerate(estimation):
                 estimation_moving_agents[cur_time][i+1] = row
 
-            # ACP_step = {} # comformal_prediction() 
-            for tau in range(1, H + 1):
-                if cur_time < tau:
-                    continue
-                #Line 7
-                X = dynamic_agents.loc[cur_time,:].values[2:]
-                print(cur_time, tau, )
-                Y = estimation_moving_agents[cur_time-tau][tau] # TODO
-                print(Y)
-                cf_scores[cur_time][tau] = np.linalg.norm(X - Y)
+            if cur_time < H: # assuming the agent is not starting until Timestamp H
+                continue
 
-                #Line 6
-                error[cur_time][tau] = 0 if cf_scores[cur_time][tau] <= constraints[cur_time][tau] else 1
-                failure_prob_delta[cur_time + 1][tau] = failure_prob_delta[cur_time][tau] + \
-                                                        acp_learing_gamma * (target_failure_prob_delta * error[cur_time][tau])
-                #Line 8
-                
-                q = math.ceil((cur_time+1 - tau) * (1 - failure_prob_delta[cur_time+1][tau]))
+            Y_cur = dynamic_agents.loc[cur_time,:].values[2:]
+            for tau in range(1, H + 1):
+                # Line 7
+                Y_est = estimation_moving_agents[cur_time-tau][tau]
+                estimation_error = np.linalg.norm(Y_cur - Y_est)
+                # cf_scores[cur_time][tau] = estimation_error
+                cf_scores[tau].add(estimation_error)
+
+                # Line 6
+                error[cur_time][tau] = 0 if estimation_error <= constraints[cur_time][tau] else 1 # a
+                failure_prob_delta[cur_time + 1][tau] = failure_prob_delta[cur_time][tau] +  acp_learing_gamma * (target_failure_prob_delta * error[cur_time][tau])
+
+                # Line 8
+                # N = (cur_time + 1 - tau)
+                N = len(cf_scores[tau]) - 1
+                q = math.ceil(N * (1 - failure_prob_delta[cur_time+1][tau]))
+
                 # Line 9
-                values = [cf_scores[k][tau] for k in range(tau, cur_time+1)] + [float("inf")]
-                values.sort()
-                print(len(values), q)
-                radius = values[q-1]
+                # values = [cf_scores[k][tau] for k in range(tau, cur_time+1)] + [float("inf")]
+                # values.sort()
+                # radius = values[q-1]
+                radius = cf_scores[tau][q - 1]
                 constraints[cur_time + 1][tau] = radius
-                # = np.quantile(values, 0.1, interpolation='higher')
+                
             print(constraints[cur_time + 1][tau], "_______________")
 
             ACP_step = pomdp.build_restrictive_region(estimation_moving_agents[cur_time], constraints[cur_time+1][tau], H)
-            # ACP_step = {}
-            # for tau in range(1, H + 1): #TODO
-                # ACP_step[tau] = get_restritive_region(estimation_moving_agents[cur_time][tau], constraints[tau][cur_time+1])
-
-            # self.compute_winning_region() # is winning region indepent of current belief ? @pian
             obs_mdp, Winning_observation = pomcp.pomdp.online_compute_winning_region(obs_current_node, AccStates, observation_successor_map, H, ACP_step)
+            
             actionIndex = pomcp.select_action()
             next_state_ground_truth = pomcp.step(state_ground_truth, actionIndex)
             reward = pomcp.step_reward(state_ground_truth, actionIndex)
             obs_current_node = pomcp.get_observation(next_state_ground_truth)
-            print("==================================step", cur_time, "s", "action", actions[actionIndex], state_ground_truth, "s'", next_state_ground_truth, "observation", obs_current_node)
+
+            fig, ax = plt.subplots()                
+            plt.xlim(0, 22)
+            plt.ylim(0, 22)
+            # circle = patches.Circle(state_ground_truth, radius=0.5, edgecolor='black', facecolor='none')
+            # ax.add_patch(circle)
+            plt.scatter(state_ground_truth[0], state_ground_truth[1], marker='*')
+            for (x, y) in pomcp.root.belief:
+                plt.scatter(x, y, marker = '.', alpha=0.5)
+            
+            for i in range(0, len(Y_cur), 2):
+                plt.scatter(Y_cur[i], Y_cur[i+1], marker = 'o', color = "r", alpha=0.5)
+
+            for tau in range(1, H + 1):
+                for j in range(0, len(estimation_moving_agents[cur_time][tau]), 2):
+                    x, y = estimation_moving_agents[cur_time][tau][j], estimation_moving_agents[cur_time][tau][j + 1]
+                    r = constraints[cur_time + 1][tau]
+                    print("radius", x, y, r)
+                    plt.scatter(x, y, color = 'blue', alpha = (0.8 * H - 0.6 * tau - 0.2) / (H -1))
+                    circle = patches.Circle((x,y), radius = r, edgecolor='blue', facecolor='none', alpha = (0.8 * H - 0.6 * tau - 0.2) / (H -1))
+                    ax.add_patch(circle)
+            plt.savefig("./data/{}-{}.jpg".format(cur_time, tau))
+            print("=====step", cur_time, "s", "action", actions[actionIndex], state_ground_truth, "s'", next_state_ground_truth,
+                    "observation", obs_current_node, pomcp.root.belief, Y_cur)
             pomcp.update(actionIndex, obs_current_node)
             state_ground_truth = next_state_ground_truth
-            cur_time += 1
             discounted_reward += pomcp.gamma * reward
             undiscounted_redward += reward
-
-            print(cmt,"DDD")
