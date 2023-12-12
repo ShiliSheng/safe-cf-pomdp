@@ -9,11 +9,11 @@ import collections
 import math
 from collections import defaultdict
 import numpy as np
-# def print(*args, **kwargs):
-#     return
+def print(*args, **kwargs):
+    return
 class Model:
     def __init__(self, robot_nodes, actions, cost, transition, transiton_prob, initial_belief,
-                 obstacles = [], target = [], end_states = set(), max_steps = 100, gamma = 0.95):
+                 obstacles = [], target = [], end_states = set(), state_reward = {}):
         self.t0 = time.time()
         self.robot_nodes = robot_nodes # set of states
         self.actions = actions
@@ -28,11 +28,9 @@ class Model:
         self.robot_edges = dict()
         self.robot_state_action_map = dict()        # (state, actionIndex) : {next_state, prob}
         self.state_action_reward_map = dict()       # (state, actionIndex) : (cost)
+        self.state_reward = state_reward
         self.init_transition()
-        self.pomcp = None
         self.end_states = end_states
-        self.max_steps = max_steps
-        self.gamma = gamma
         self.winning_obs = set()
 
     def set_transition_prob(self, fnode, actionIndex):
@@ -68,7 +66,6 @@ class Model:
         for fnode in self.robot_nodes: 
             for action_index, action in enumerate(self.actions):
                 self.set_transition_prob(fnode, action_index)
-
     
     def display_state_transiton(self):
         print("++++++++++ state transition")
@@ -107,7 +104,6 @@ class Model:
         f_accept_node.close()
 
         return motion_mdp, AccStates
-
         
     def compute_H_step_space(self, motion_mdp, H):
         #Compute the H-step recahable support belief states, idea: o -> s -> s' -> o'
@@ -277,7 +273,7 @@ class Model:
         for S_f in Obs_Sf:
             for MEC in S_f:
                 for sf in MEC:
-                    print(sf[1])
+                    # print(sf[1])
                     if sf[1] not in {frozenset({'obstacle'})}:
                         Winning_obs.add(sf[0]) 
         print('Number of winning states in observation space: %s' % len(Winning_obs))
@@ -368,7 +364,7 @@ class Model:
                             ACP[tau].append((nx, ny))
         return ACP
 
-if __name__ == "__main__":
+def test_case1():
     U = actions = ['N', 'S', 'E', 'W', 'ST']
     C = cost = [3, 3, 3, 3, 1]
 
@@ -413,3 +409,97 @@ if __name__ == "__main__":
     obs_current_node = (6, 6)
     ACP_step = dict() #conformal prediction constraints
     obs_mdp, Winning_observation = pomdp.online_compute_winning_region(obs_current_node, AccStates, observation_successor_map, H, ACP_step)
+
+def obstacle_avoidance():
+    U = actions = []
+    for change_direction in ["turn left", "turn right", "keep straight"]:
+        for change_speed in [0, 0.5, 1]:
+            actions.append((change_direction, change_speed))
+    print(actions)
+    C = cost = [-1] * (len(actions))
+
+    dx = 0.5
+    dy = 0.5
+    mx = 22
+    my = 22
+    robot_nodes = set()
+    for x in np.arange(0, mx, dx):
+        for y in np.arange(0, my, dy):
+            for (ore_x, ore_y) in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
+                for speed in np.arange(0, 1, dx):
+                    robot_nodes.add((x, y, ore_x, ore_y, speed))
+    print(len(robot_nodes))
+
+    cnt = 0
+    for x, y, ore_x, ore_y, speed in robot_nodes:
+        if (cnt == 2): break
+        for change_direction, change_speed in actions:
+            if (cnt == 2): break
+            cnt += 1
+            nx = x + ore_x * speed
+            ny = y + ore_y * speed
+            if change_direction == "turn left":
+                nxt_ore_x = ore_y
+                nxt_ore_y = ore_x * (-1)
+            elif change_direction == 'turn right':
+                nxt_ore_x = ore_y * (-1)
+                nxt_ore_y = ore_x
+            else:
+                nxt_ore_x = ore_x
+                nxt_ore_y = ore_y
+            nxt_speed =  change_speed # + speed
+            nxt_state = (nx, ny, nxt_ore_x, nxt_ore_y, nxt_speed)
+            print((x, y, ore_x, ore_y, speed), (change_direction, change_speed), nxt_state, )
+    # u = self.actions[actionIndex]
+    # c = self.cost[actionIndex]
+    # cumulative_prob = 0
+    # succ_set = dict()
+    # n_next_positions = len(self.transiton[actionIndex])
+    # for i in range(n_next_positions):
+    #     dx, dy = self.transiton[actionIndex][i]
+    #     prob = self.transition_prob[actionIndex][i]
+    #     tnode = (fnode[0] + dx, fnode[1] + dy)
+    #     if tnode in self.robot_nodes:
+    #         cumulative_prob += prob
+    #         self.robot_edges[(fnode, u, tnode)] = (prob, c)
+    #         succ_prop = {tnode: prob}
+    #         succ_set.update(succ_prop)
+
+    # if not succ_set:     # if no successor, stay the same state
+    #     succ_set[fnode] = 1
+    # else:                # make prob sum to 1
+    #     for tnode in succ_set:
+    #         succ_set[tnode] += (1 - cumulative_prob) / len(succ_set)
+
+    # if fnode not in self.state_action_reward_map: self.state_action_reward_map[fnode] = {}
+    # self.state_action_reward_map[fnode][actionIndex] = c
+
+    # if fnode not in self.robot_state_action_map: self.robot_state_action_map[fnode] = {}
+    # self.robot_state_action_map[fnode][actionIndex] = succ_set
+    # self.state_tra[actionIndex][fnode] = succ_set
+    # transition_prob = [[] for _ in range(len(actions))]
+    # transition_prob[0] = [0.1, 0.8, 0.1] # S
+    # transition_prob[1] = [0.1, 0.8, 0.1] # N
+    # transition_prob[2] = [0.1, 0.8, 0.1] # E
+    # transition_prob[3] = [0.1, 0.8, 0.1] # W
+    # transition_prob[4] = [1]             # ST
+
+    # WS_transition = [[] for _ in range(len(actions))]
+    # WS_transition[0] = [(-2, 2), (0, 2), (2, 2)]       # S
+    # WS_transition[1] = [(-2, -2), (0, -2), (2, -2)]    # N
+    # WS_transition[2] = [(2, -2), (2, 0), (2, 2)]       # E
+    # WS_transition[3] = [(-2, -2), (-2, 0), (-2, 2)]    # W
+    # WS_transition[4] = [(0, 0)]                         # ST
+
+    # obstacles =  [(3, 7), (5, 5)]
+    # target = [(17, 17)]
+    # end_states = set([(19,1)])
+
+    # robot_nodes = set()
+    # for i in range(1, 20, 2):
+    #     for j in range(1, 20, 2):
+    #         node = (i, j)
+    #         robot_nodes.add(node)
+
+if __name__ == "__main__":
+    obstacle_avoidance()
