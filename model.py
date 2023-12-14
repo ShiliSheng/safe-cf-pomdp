@@ -211,7 +211,7 @@ class Model:
                 observation_target.add(o_node)
             for i in range(1, H+1):
                 SS[i] = support_set.intersection(obstacle_new[i])
-                if oc == i and len(SS[i]) > 0:
+                if o_node[1] == i and len(SS[i]) > 0:
                     obs_nodes_reachable[(o_node)] = {frozenset(['obstacle']): 1.0}
                     observation_obstacle.add(o_node)
         print('Number of target observation states: %s' %len(observation_target))
