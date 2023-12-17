@@ -442,7 +442,7 @@ class POMCP:
 
     def expand_node(self, state):
         vnode = POMCPNode()
-        # vnode.belief[state] += 1 
+        # vnode.belief[state] += 1 # node should not be added into belief before checking.
         available_actions = self.get_legal_actions(state)
         for actionIndex, action in enumerate(self.pomdp.actions):
             if actionIndex not in available_actions: continue 
