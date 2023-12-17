@@ -31,6 +31,46 @@ class Predictor():
         self.history_length = 4
         self.prediction_length = 2
 
+    def create_test_dataset(self, df, test_data_file, subgroup_id):
+        new_df = pd.DataFrame()
+        for pid, group in df.groupby("id"):
+            trajectory_length = len(group)
+            direction = 1
+            cnt = 0
+            cool_down = 5
+            indices = group.index
+            index = 0
+            while cnt < 50:
+                x = (group.loc[indices[index], 'x'])
+                y = (group.loc[indices[index], 'y'])
+                new_df.loc[cnt, str(pid) + "x"] = x
+                new_df.loc[cnt, str(pid) + "y"] = y
+                cnt += 1
+                index += direction
+                if cool_down and ( index == trajectory_length or index == -1):
+                    index -= direction
+                    cool_down -= 1
+                if index == trajectory_length or index == -1:
+                    direction *= -1
+                    index += direction
+                    cool_down = 5
+
+        new_df = new_df.set_index(pd.RangeIndex(start=-10, stop=-10 + len(new_df)))
+        new_df.to_csv(test_data_file + "_" + str(subgroup_id) + ".csv")
+        # reshaped_dataset = test_raw_dataset.pivot_table(index='timestamp',
+        #                                             columns='id',
+        #                                             values=['x', 'y'],
+        #                                             aggfunc='first')
+
+        # # Flatten the multi-level column index
+        # reshaped_dataset.columns = [f'{col[1]}_{col[0]}' for col in reshaped_dataset.columns]
+        # # Reset the index to have 'timestamp' as a regular column
+        # reshaped_dataset = reshaped_dataset.fillna(-1)
+        # reshaped_dataset = reshaped_dataset.reindex(sorted(reshaped_dataset.columns), axis=1)
+        # reshaped_dataset = reshaped_dataset.reset_index()
+        # reshaped_dataset = reshaped_dataset.set_index(pd.RangeIndex(start=-10, stop=-10 + len(reshaped_dataset)))
+        # new_df.to_csv(test_data_file + "_" + str(subgroup_id) + ".csv")
+        
     def preprocess(self, raw_data_file, train_data_file, validation_data_file, test_data_file):
         csv_columns = ["frame_id", "id", "x", "z", "y", "vel_x", "vel_z", "vel_y"]
         # read from csv => fill traj table
@@ -50,35 +90,29 @@ class Predictor():
         raw_dataset = raw_dataset[raw_dataset.id.isin(filtered)]
         raw_dataset.id.nunique()
         for col in ["x", "y"]:
-            raw_dataset[col] = (raw_dataset[col] - raw_dataset[col].min())#/ (raw_dataset[col].max() - raw_dataset[col].min())
+            raw_dataset[col] = (raw_dataset[col] - raw_dataset[col].min()) #/ (raw_dataset[col].max() - raw_dataset[col].min())
+        raw_dataset["id"] = raw_dataset["id"].astype(int)
+
         # print("preprocessed",raw_dataset.id.nunique())
         # print(raw_dataset.x.min(), raw_dataset.x.max(), raw_dataset.y.min(), raw_dataset.y.max())
 
         train_id, test_id = train_test_split(raw_dataset.id.unique(), test_size= 1 / 10, random_state=42)
         train_id, validation_id = train_test_split(train_id, test_size = 0.2, random_state = 42)
-        train_id, validation_id, test_id = set(train_id), set(validation_id), set(test_id)
+        train_id, validation_id = set(train_id), set(validation_id)
 
         train_raw_dataset = raw_dataset[raw_dataset.id.isin(train_id)]
         validation_raw_dataset = raw_dataset[raw_dataset.id.isin(validation_id)]
-        test_raw_dataset = raw_dataset[raw_dataset.id.isin(test_id)]
 
+        n_test = len(test_id)
+        n_subgroup = 4
+        group = n_test // n_subgroup
+        for i in range(n_subgroup):
+            sub_group = set(test_id[i * group: (i + 1)* group])
+            test_raw_dataset = raw_dataset[raw_dataset.id.isin(sub_group)]
+            self.create_test_dataset(test_raw_dataset, test_data_file, i)
         # train_raw_dataset.to_csv(path + "raw_train.csv")
         # validation_raw_dataset.to_csv(path + "raw_validation.csv")
         # test_raw_dataset.to_csv(path + "raw_test.csv")
-
-        reshaped_dataset = test_raw_dataset.pivot_table(index='timestamp',
-                                                    columns='id',
-                                                    values=['x', 'y'],
-                                                    aggfunc='first')
-
-        # Flatten the multi-level column index
-        reshaped_dataset.columns = [f'{col[1]}_{col[0]}' for col in reshaped_dataset.columns]
-        # Reset the index to have 'timestamp' as a regular column
-        reshaped_dataset = reshaped_dataset.fillna(-1)
-        reshaped_dataset = reshaped_dataset.reindex(sorted(reshaped_dataset.columns), axis=1)
-        reshaped_dataset = reshaped_dataset.reset_index()
-        reshaped_dataset = reshaped_dataset.set_index(pd.RangeIndex(start=-10, stop=-10 + len(reshaped_dataset)))
-        reshaped_dataset.to_csv(test_data_file)
 
         ##########
         history_length = self.history_length
@@ -169,10 +203,13 @@ class Predictor():
         criterion = torch.nn.MSELoss()
 
         for batch_input, batch_target in validation_dataset:
+            # batch_input: batch_size * history_length * feature_size
+            # batch_target: batch_size * prediction_length * feature_size
+            print(batch_input, batch_target)
             with torch.no_grad():  # Disable gradient computation during evaluation
                 batch_input, batch_target = batch_input.to(self.device), batch_target.to(self.device)
-                output = self.model(batch_input)
-                output = output.view(-1, self.prediction_length, self.output_size)
+                output = self.model(batch_input) # batch_size * (prediction_length * feature_size)
+                output = output.view(-1, self.prediction_length, self.output_size)# batch_size * prediction_length * feature_size
                 loss = criterion(output, batch_target)
                 total_mse += loss.item()
         average_mse = total_mse / num_batches
@@ -202,10 +239,10 @@ class Predictor():
         predicted_values = model_output[0, -self.prediction_length:, :].cpu().numpy()  # Move back to CPU for further processing if needed
         return predicted_values
 
-    def get_observations_from_moving_agents(self, dynamic_agents, cur_time):
+    def get_observations_from_moving_agents(self, dynamic_agents, cur_time, starting_index = 2):
         history_length = self.history_length
         res = []
-        for i in range(2, len(dynamic_agents.columns), 2):
+        for i in range(starting_index, len(dynamic_agents.columns), 2):
             values = dynamic_agents.loc[cur_time - history_length + 1: cur_time , [dynamic_agents.columns[i], dynamic_agents.columns[i+1]]]
             values = np.array(values)
             res.append(values)
@@ -219,12 +256,13 @@ class Predictor():
         reshaped =  [list(chain(*group)) for group in zip(*estimation)]
         return reshaped
     
-    def predict(self, dynamic_agents, cur_time):
+    def predict(self, dynamic_agents, cur_time, starting_index = 1):
         history_length = self.history_length
         estimation = []
-        for i in range(2, len(dynamic_agents.columns), 2):
+        for i in range(starting_index, len(dynamic_agents.columns), 2):
             values = dynamic_agents.loc[cur_time - history_length + 1: cur_time, [dynamic_agents.columns[i], dynamic_agents.columns[i+1]]]
             test = torch.tensor(np.array(values), dtype=torch.float32).clone().detach().unsqueeze(0)  # Add batch dimension
+            print(values.values)
             p = self.predict_case(test)
             estimation.append(p)
         reshaped =  [list(chain(*group)) for group in zip(*estimation)]
@@ -239,28 +277,66 @@ class Predictor():
         ACP = [()] * horizon
         return ACP
 
+    def compute_prediction_error(self, A, B):
+        N = len(A) // 2
+        distance = 0
+        for i in range(0, N):
+            distance += ((A[i * 2] - B[i* 2]) ** 2 + (A[2 * i+1] - B[2 * i+1]) ** 2) ** (0.5)
+            # distance += abs(A[i] - B[i]) + abs(A[i+1] - B[i+1])
+        distance /= N
+        # distance = np.linalg.norm(A - B)
+        # print("distance",distance)
+        return distance
+    
+    # def compute_prediction_error(self, A, B):
+    #     N = len(A)
+    #     distance = 0
+    #     for (x, est_x) in zip(A, B):
+    #         distance += (x - est_x)
+
 if __name__ == "__main__":
     path = './OpenTraj/datasets/ETH/seq_eth/'
     raw_file =  path + 'obsmat.txt'
     lstm_model = path + 'model_weights.pth'
     train_data_file = path + 'train_dataset.pickle'
     validation_data_file = path + 'test_dataset.pickle'
-    test_data_file = path + "test_dynammic_agents.csv"
+    test_data_file = path + "test_dynammic_agents"
 
-    pred = Predictor()
-    # pred.preprocess(raw_file, train_data_file, validation_data_file, test_data_file)
+    prediction_model = Predictor()
+    prediction_model.preprocess(raw_file, train_data_file, validation_data_file, test_data_file)
+    
     # pred.train(train_data_file, lstm_model)
-    pred.validation(validation_data_file, lstm_model)
+    # pred.validation(validation_data_file, lstm_model)
 
-    pred.load_model(path + lstm_model)
-    dynamic_agents =  pd.read_csv(test_data_file)
-    et = pred.predict(dynamic_agents, 0)
-    # t1 = time.time()
-    # # for cur_time in range(40):
-    # #     p = pred.predit_in_batch(dynamic_agents, cur_time)
-    # t2 = time.time()
-    # for cur_time in range(4):
-    #     p = pred.predict(dynamic_agents, cur_time)
-    #     print(p, len(p))
-    # t3 = time.time()
-    # print(t2-t1, t3 -t2)
+    # prediction_model.load_model(lstm_model)
+    # H = prediction_model.prediction_length
+    # dynamic_agents =  pd.read_csv(test_data_file + "_1.csv", index_col=0)
+    # num_agents_tracked = len(dynamic_agents.columns) // 2 
+    # starting_col_index = 0
+    # max_steps = 30
+    # estimation_moving_agents = [[0 for _ in range(num_agents_tracked * 2)] * (H+1) for _ in range(max_steps + 10)] 
+    
+    # for cur_time in range(10, 11):
+    #     estimation = prediction_model.predict(dynamic_agents, cur_time, starting_col_index )
+    #     for i, row in enumerate(estimation):
+    #         estimation_moving_agents[cur_time][i+1] = row
+    #         Y_est = row
+    #         Y_cur = dynamic_agents.loc[cur_time + i + 1,:].values[starting_col_index:]
+    #         estimation_error = prediction_model.compute_prediction_error(Y_cur, Y_est)#
+    #         print(estimation_error, cur_time, i+1, )
+    #         # print(row)
+    #         # print(Y_cur)
+    # print("done")
+    # # et = pred.predict(dynamic_agents, 0)
+    # # t1 = time.time()
+    # # # for cur_time in range(40):
+    # # #     p = pred.predit_in_batch(dynamic_agents, cur_time)
+    # # t2 = time.time()
+    # # for cur_time in range(4):
+    # #     p = pred.predict(dynamic_agents, cur_time)
+    # #     print(p, len(p))
+    # # t3 = time.time()
+    # # print(t2-t1, t3 -t2)
+    # t = dynamic_agents.loc[-prediction_model.history_length + 1 : 0 , :]
+    # print(t)
+    # print(dynamic_agents.columns)
