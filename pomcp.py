@@ -15,7 +15,12 @@ from itertools import chain
 from sortedcontainers import SortedList
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
-
+from PIL import Image
+import imageio
+import os
+import sys
+class ForcedExitException(Exception):
+    pass
 # class POMCPBelief:
 #     def __init__(self) -> None:
 #         self.particles = []
@@ -64,9 +69,9 @@ class POMCPNode:
         self.belief[state] = self.belief.get(state, 0) + 1;
 
     def add_illegal_action_index(self, actionIndex):
-        self.remove_child(actionIndex)
         self.illegalActionIndexes.add(actionIndex)
-    
+        return self.remove_child(actionIndex)
+        
     def is_action_index_illegal(self, actionIndex):
         return actionIndex in self.illegalActionIndexes
 
@@ -96,11 +101,14 @@ class POMCPNode:
             self.v -= qchild.v
             self.n -= qchild.n
         del self.children[index]
-        if len(self.children) == 0 and self.parent :
+        if len(self.children) == 0:
+            if not self.parent: # already root:
+                return -1
             qParent = self.parent
             vparent = qParent.parent
-            vparent.remove_child(qParent.h)
-        
+            return vparent.remove_child(qParent.h)
+        return 0   
+    
     def get_child_by_action_index(self, index):
         if index in self.children: return self.children[index]
         child = POMCPNode()
@@ -137,7 +145,7 @@ class POMCPNode:
         return state in self.belief
     
 class POMCP:
-    def __init__(self, pomdp, constant = 1000, maxDepth = 100, end_states = set(), target = set(), horizon = 5):
+    def __init__(self, pomdp, shieldLevel = 0, shieldHorizon = 5, end_states = set(), target = set(),  constant = 1000, maxDepth = 100 ):
 
         # def __init__(self, initial_belief, actions, robot_state_action_map, state_to_observation, state_action_reward_map, 
         #              end_states, constant = 1000, maxDepth = 100, targets = set()):
@@ -168,8 +176,8 @@ class POMCP:
         self.stateSuccessorsHashSet = {}
         self.stateSuccessorArryList = {}
         self.stateSuccessorCumProb = {}
-        self.shiledLevel = 1
-        self.horizon = 5
+        self.shieldLevel = shieldLevel
+        self.horizon = shieldHorizon
         self.initializePOMCP()
 
     def initializePOMCP(self):
@@ -309,18 +317,23 @@ class POMCP:
             return 0
         
         actionIndex = self.greedyUCB(vnode, True)
-        if self.TreeDepth <= self.horizon and self.shiledLevel == ON_THE_FLY:
+        if self.TreeDepth <= self.horizon and self.shieldLevel == ON_THE_FLY:
             if not vnode.have_state_in_belief_support(state): 
-                # print("checking", self.TreeDepth)
-                if (self.TreeDepth == 1):
-                    print(self.TreeDepth, state, vnode.getH())
+                qparent = vnode.getParent() 
+                parentActionIndex = qparent.getH()
+                vparent = qparent.getParent() 
+                print(parentActionIndex,"checking", self.TreeDepth, state, pomdp.state_observation_map[state], vnode.belief.keys())
+                # if (self.TreeDepth == 1):
+                #     print(self.TreeDepth, state, vnode.getH())
                 vnode.add_particle(state)
                 if not self.is_current_belief_winning(vnode, self.TreeDepth): #TODO
                     qparent = vnode.getParent() 
                     parentActionIndex = qparent.getH()
                     vparent = qparent.getParent() 
                     vparent.add_illegal_action_index(parentActionIndex)
-                    
+                    print("not winning", self.TreeDepth, parentActionIndex)
+                else:
+                    print("winning")
         if self.TreeDepth >= 1:
             vnode.add_particle(state)
 
@@ -352,7 +365,7 @@ class POMCP:
         
         para_expand_count = 1
         if (not vnode and (not done) and (qnode.n >= para_expand_count)):
-            vnode = POMCPNode()
+            # vnode = POMCPNode()
             vnode = self.expand_node(state)
             vnode.h = observation
             vnode.parent = qnode
@@ -376,6 +389,7 @@ class POMCP:
             for state in self.root.belief:
                 obs = self.get_observation(state)
                 if not self.is_winning((obs, time)):
+                    # print(state, obs, self.TreeDepth,"ddddddddd")
                     return False
         obs = vnode.getH()
         return self.is_winning((obs, time))  
@@ -384,19 +398,19 @@ class POMCP:
     def expand(self, parent, state):
         availableActions = self.get_legal_actions(state)
         for actionIndex in availableActions:
+            if self.shieldLevel >= 1 and parent.is_action_index_illegal(actionIndex):
+                continue
             newChild = POMCPNode()
             newChild.set_h_action(True)
             newChild.h = actionIndex
             newChild.parent = parent
             parent.add_child(newChild, actionIndex)
-            #TODO
-            # if self.shieldLevel == 2 and self.TreeDepth == 0 and parent.is_action_index_illegal(actionIndex):
-            #     continue
+            # TODO
             # if self.shieldLevel == 1 and self.TreeDepth == 0 and self.isActionShieldedForNode(parent, actionIndex):
             #     parent.add_illegal_action_index(actionIndex)
         
         if not parent.children:
-            print("add default available actions")
+            # print("add default available actions")
             for actionIndex in availableActions:
                 newChild = POMCPNode()
                 newChild.set_h_action(True)
@@ -428,10 +442,10 @@ class POMCP:
 
     def expand_node(self, state):
         vnode = POMCPNode()
-        vnode.belief[state] += 1
+        # vnode.belief[state] += 1 
         available_actions = self.get_legal_actions(state)
         for actionIndex, action in enumerate(self.pomdp.actions):
-            if action not in available_actions: continue
+            if actionIndex not in available_actions: continue 
             qnode = POMCPNode()
             qnode.h = actionIndex
             qnode.set_h_action(True)
@@ -444,10 +458,10 @@ class POMCP:
             return float("-inf")
         if actionIndex not in self.pomdp.state_action_reward_map[state]:
             return float("-inf")
-        return self.pomdp.state_action_reward_map[state][actionIndex]
+        return self.pomdp.state_action_reward_map[state][actionIndex] + self.pomdp.state_reward[state]
     
     def get_state_reward(self, state):
-        return 0
+        return self.pomdp.state_reward[state]
     
     def get_random_action_index(self, state): # to be improved
         available_action_index = self.pomdp.robot_state_action_map[state].keys()
@@ -537,24 +551,24 @@ class POMCP:
         return self.action2Index.get(action, -1)
 
 
-def get_cf_score(dynamic_agents, cur_time, estimation):
-    values = dynamic_agents.loc[cur_time,:].values[2:]
-    return np.linalg.norm(values - estimation)
-    # score = 0
+# def get_cf_score(dynamic_agents, cur_time, estimation):
+#     values = dynamic_agents.loc[cur_time,:].values[2:]
+#     return np.linalg.norm(values - estimation)
+#     # score = 0
     # num_agents = get_num_agents(dynamic_agents)
     # for i in range(2, num_agents, 2):
     #     score += (dynamic_agents.loc[cur_time, ] - B[i][0]) ** 2 + (A[i][1] - B[i][0]) ** 2
     # return score ** (0.5)
 
-def get_restritive_region(Y, radius):
-    res = []
-    num_agents = len(Y)
-    for (x, y) in Y:
-        for dx in range(-radius, radius, 0.1):
-            for dy in range(-radius, radius, 0.1):
-                nx, ny = x + dx, y + dy
-                res.append(nx, ny)
-    return res;
+def compute_prediction_error(A, B):
+    N = len(A)
+    distance = 0
+    for i in range(0, N, 2):
+        distance = (A[i] - B[i]) ** 2 + (A[i+1] - B[i+1]) ** 2
+    distance = distance ** 0.5 / N
+    # distance = np.linalg.norm(A - B)
+    # print("distance",distance)
+    return distance
 
 if __name__ == "__main__":
     #Settings for LSTM trajectory prediction
@@ -565,7 +579,7 @@ if __name__ == "__main__":
 
     # POMDP
     U = actions = ['N', 'S', 'E', 'W', 'ST']
-    C = cost = [-1, -1, -1, -1, -1]
+    C = cost = [100000, -1, -1, -1, -1]
 
     transition_prob = [[] for _ in range(len(actions))]
     transition_prob[0] = [0.1, 0.8, 0.1] # S
@@ -580,10 +594,15 @@ if __name__ == "__main__":
     WS_transition[2] = [(2, -2), (2, 0), (2, 2)]       # E
     WS_transition[3] = [(-2, -2), (-2, 0), (-2, 2)]    # W
     WS_transition[4] = [(0, 0)]                         # ST
-
-    obstacles =  [(3, 7)]
-    target = [(19, 19)]
-    end_states = set([(19,1)])
+    obstacles = []
+    obstacles = [(1, 3)]
+    # obstacles =  [(3, 5)]
+    target = [(17, 17), (17, 19), (19, 17), (19, 19)]
+    end_states = set(target)
+    state_reward = defaultdict(int)
+    for state in target:
+        pass
+    state_reward[(17, 19)] = 10000
 
     robot_nodes = set()
     for i in range(1, 20, 2):
@@ -591,33 +610,36 @@ if __name__ == "__main__":
             node = (i, j)
             robot_nodes.add(node) 
 
-    initial_belief_support = [(5,5), (5,7)]
+    # initial_belief_support = [(3,3)]
+    initial_belief_support = [(1,1)]
     initial_belief = {}
     for state in initial_belief_support:
         initial_belief[state] = 1 / len(initial_belief_support)
 
+    shieldLevel = 1
     pomdp = Model(robot_nodes, actions, cost, WS_transition, transition_prob,
-                     initial_belief, obstacles, target, end_states)
+                     initial_belief, obstacles, target, end_states, state_reward)
 
-    pomcp = POMCP(pomdp)
+    pomcp = POMCP(pomdp, shieldLevel, prediction_model.prediction_length, end_states)
 
     motion_mdp, AccStates = pomcp.pomdp.compute_accepting_states() 
     observation_successor_map = pomcp.pomdp.compute_H_step_space(motion_mdp, H)
     step = 0
-    discounted_reward = 0
-    undiscounted_redward = 0
+
     num_episodes = 1
-    max_steps = 5
+    max_steps = 100
 
     # Settings for conformal prediction
     path = "./OpenTraj/datasets/ETH/seq_eth/"
-    dynamic_agents =  pd.read_csv(path + "test_dynammic_agents.csv")
+    dynamic_agents =  pd.read_csv(path + "test_dynammic_agents_1.csv", index_col=0)
+    starting_col_index = 0 # in the dataframe, where is the starting col of values
+
     # print(dynamic_agents.head())
     #           agent1, anget2  angentN
     # t=0       (x,y)       .        .
     # ...           .       .        .  
     # t=inf         .       .       (x,y)
-    num_agents_tracked = len(dynamic_agents.columns) // 2 -1
+    num_agents_tracked = len(dynamic_agents.columns) // 2 
     target_failure_prob_delta = 0.1
     acp_learing_gamma = 0.08
     failure_prob_delta = [[0] * (H+1) for _ in range(max_steps + 10)]
@@ -630,7 +652,8 @@ if __name__ == "__main__":
     for tau in range(1, H + 1):
         failure_prob_delta[0][tau] = target_failure_prob_delta
 
-    cmt = 0
+
+    max_steps = 1
     for _ in range(num_episodes):
         pomcp.reset_root()
         state_ground_truth = pomcp.root.sample_state_from_belief()
@@ -638,45 +661,12 @@ if __name__ == "__main__":
         obs_current_node = pomcp.get_observation(state_ground_truth)
         print("current observation", obs_current_node)
         cur_time = -1
-
-        while cur_time < max_steps:
+        discounted_reward = 0
+        undiscounted_reward = 0
+        while cur_time < max_steps and state_ground_truth not in pomcp.pomdp.end_states:
             cur_time += 1
 
-            # Line 3, 4 TODO preprocessing
-            estimation = prediction_model.predict(dynamic_agents, cur_time)
-            for i, row in enumerate(estimation):
-                estimation_moving_agents[cur_time][i+1] = row
-
-            if cur_time < H: # assuming the agent is not starting until Timestamp H
-                continue
-
-            Y_cur = dynamic_agents.loc[cur_time,:].values[2:]
-            for tau in range(1, H + 1):
-                # Line 7
-                Y_est = estimation_moving_agents[cur_time-tau][tau]
-                estimation_error = np.linalg.norm(Y_cur - Y_est)
-                # cf_scores[cur_time][tau] = estimation_error
-                cf_scores[tau].add(estimation_error)
-
-                # Line 6
-                error[cur_time][tau] = 0 if estimation_error <= constraints[cur_time][tau] else 1 # a
-                failure_prob_delta[cur_time + 1][tau] = failure_prob_delta[cur_time][tau] +  acp_learing_gamma * (target_failure_prob_delta * error[cur_time][tau])
-
-                # Line 8
-                # N = (cur_time + 1 - tau)
-                N = len(cf_scores[tau]) - 1
-                q = math.ceil(N * (1 - failure_prob_delta[cur_time+1][tau]))
-
-                # Line 9
-                # values = [cf_scores[k][tau] for k in range(tau, cur_time+1)] + [float("inf")]
-                # values.sort()
-                # radius = values[q-1]
-                radius = cf_scores[tau][q - 1]
-                constraints[cur_time + 1][tau] = radius
-                
-            print(constraints[cur_time + 1][tau], "_______________")
-
-            ACP_step = pomdp.build_restrictive_region(estimation_moving_agents[cur_time], constraints[cur_time+1][tau], H)
+            ACP_step = [[] for _ in range(H+1)]
             obs_mdp, Winning_observation = pomcp.pomdp.online_compute_winning_region(obs_current_node, AccStates, observation_successor_map, H, ACP_step)
             
             actionIndex = pomcp.select_action()
@@ -689,25 +679,19 @@ if __name__ == "__main__":
             plt.ylim(0, 22)
             # circle = patches.Circle(state_ground_truth, radius=0.5, edgecolor='black', facecolor='none')
             # ax.add_patch(circle)
-            plt.scatter(state_ground_truth[0], state_ground_truth[1], marker='*')
-            for (x, y) in pomcp.root.belief:
-                plt.scatter(x, y, marker = '.', alpha=0.5)
-            
-            for i in range(0, len(Y_cur), 2):
-                plt.scatter(Y_cur[i], Y_cur[i+1], marker = 'o', color = "r", alpha=0.5)
 
-            for tau in range(1, H + 1):
-                for j in range(0, len(estimation_moving_agents[cur_time][tau]), 2):
-                    x, y = estimation_moving_agents[cur_time][tau][j], estimation_moving_agents[cur_time][tau][j + 1]
-                    r = constraints[cur_time + 1][tau]
-                    print("radius", x, y, r)
-                    plt.scatter(x, y, color = 'blue', alpha = (0.8 * H - 0.6 * tau - 0.2) / (H -1))
-                    circle = patches.Circle((x,y), radius = r, edgecolor='blue', facecolor='none', alpha = (0.8 * H - 0.6 * tau - 0.2) / (H -1))
-                    ax.add_patch(circle)
-            plt.savefig("./data/{}-{}.jpg".format(cur_time, tau))
-            print("=====step", cur_time, "s", "action", actions[actionIndex], state_ground_truth, "s'", next_state_ground_truth,
-                    "observation", obs_current_node, pomcp.root.belief, Y_cur)
+            plt.scatter(state_ground_truth[0], state_ground_truth[1], marker = '*', color = "black")
+            for (x, y) in pomcp.root.belief:
+                plt.scatter(x, y, marker = '*', alpha=0.5, color = "black")
+            plt.title("Time: {}, Action: {}".format(cur_time, actions[actionIndex]))
+            plt.savefig("./figures/test_pomcp/figure_{}.jpg".format(str(cur_time).zfill(3)), dpi=300)
+            plt.close()
             pomcp.update(actionIndex, obs_current_node)
             state_ground_truth = next_state_ground_truth
             discounted_reward += pomcp.gamma * reward
-            undiscounted_redward += reward
+            undiscounted_reward += reward
+            print("=====step", cur_time, "s", "action", actions[actionIndex], state_ground_truth, "s'", next_state_ground_truth,
+                    "observation", obs_current_node, pomcp.root.belief, undiscounted_reward)
+        image_files = sorted([f for f in os.listdir('./figures/test_pomcp/') if f.endswith('.jpg')])
+        images = [Image.open(os.path.join('./figures/test_pomcp/', f)) for f in image_files]
+        imageio.mimsave('./data/pomcp_output.gif', images, duration=0.5)  # 设置每帧之间的时间间隔（单位：秒）
