@@ -9,8 +9,8 @@ import collections
 import math
 from collections import defaultdict
 import numpy as np
-def print(*args, **kwargs):
-    return
+# def print(*args, **kwargs):
+    # return
 class Model:
     def __init__(self, robot_nodes, actions, cost, transition, transiton_prob, initial_belief,
                  obstacles = [], target = [], end_states = set(), state_reward = {}):
@@ -171,21 +171,17 @@ class Model:
         
         return observation_successor_map
 
-    def online_compute_winning_region(self, obs_initial_node, AccStates, observation_successor_map, H, ACP_step):
+    def online_compute_winning_region(self, obs_initial_node, AccStates, observation_successor_map, H, ACP):
         #--------------ONLINE-------------------------
         # Build the N-step reachable support belief MDP, the target set for the support belief MDP is given by AccStates (which is computed offline)
         # ACP_step: computed adaptive conformal prediction constraints
         U = self.actions
         C = self.cost
-        ACP = dict()
-        for i in range(1, H+1): 
-            ACP[i] = ()          
-            #ACP[i] = ACP_step[i]
         obstacle_static = set(self.obstacles)
         obstacle_new = dict()
         for i in range(H):
             obstacle_new[i+1] = obstacle_static.union(ACP[i+1])
-
+        print("obstacle_new", obstacle_new)
         #----add time counter----
         obs_initial_node_count = (obs_initial_node, 0)
         H_step_obs = observation_successor_map[obs_initial_node, H]
@@ -193,7 +189,7 @@ class Model:
         obs_nodes_reachable[obs_initial_node_count] = {frozenset(): 1.0}
         for oc in range(1, H+1):
             for o_node in self.obs_nodes:
-                #if o_node in observation_successor_map[obs_initial_node, oc]:
+                # if o_node in observation_successor_map[obs_initial_node, oc]:
                 onode_count = (o_node, oc)
                 obs_nodes_reachable[onode_count] = {frozenset(): 1.0}
 
@@ -207,7 +203,7 @@ class Model:
                 observation_target.add(o_node)
             for i in range(1, H+1):
                 SS[i] = support_set.intersection(obstacle_new[i])
-                if oc == i and len(SS[i]) > 0:
+                if o_node[1] == i and len(SS[i]) > 0:
                     obs_nodes_reachable[(o_node)] = {frozenset(['obstacle']): 1.0}
                     observation_obstacle.add(o_node)
         print('Number of target observation states: %s' %len(observation_target))
@@ -337,18 +333,19 @@ class Model:
         for state, obs in self.state_observation_map.items():
             print("state", state, "obs = ", obs)
 
-    def find_next_states(self, state, actionIndex):
+    def find_next_states(self, state):
         queue = collections.deque([state])
         visited = set([state])
         while queue:
             print(queue, "n")
             for _ in range(len(queue)):
                 s = queue.popleft();
-                for nxt in self.robot_state_action_map[state][actionIndex]:
-                    if nxt in visited: continue
-                    queue.append(nxt)
-                    visited.add(nxt)
-
+                for actionIndex in self.robot_state_action_map[s]:
+                    for nxt in self.robot_state_action_map[s][actionIndex]:
+                        if nxt in visited: continue
+                        queue.append(nxt)
+                        visited.add(nxt)
+        
     def build_restrictive_region(self, estimations, radius, H):
         ACP = defaultdict(list)
         dx = 1
@@ -360,7 +357,7 @@ class Model:
                 by, uy = math.floor(y - radius), math.ceil(y + radius)
                 for nx in np.arange(lx, rx, dx):
                     for ny in np.arange(by, uy, dy):
-                        if (nx, ny) in self.robot_state_action_map:
+                        if (nx, ny) in self.robot_state_action_map and (nx-x)**2 + (ny-y)** 2 < radius ** 2:
                             ACP[tau].append((nx, ny))
         return ACP
 
@@ -382,7 +379,8 @@ def test_case1():
     WS_transition[3] = [(-2, -2), (-2, 0), (-2, 2)]    # W
     WS_transition[4] = [(0, 0)]                         # ST
 
-    obstacles =  [(3, 7), (5, 5)]
+    obstacles =  [(1,3)]
+    # obstacles = []
     target = [(17, 17)]
     end_states = set([(19,1)])
 
@@ -392,7 +390,7 @@ def test_case1():
             node = (i, j)
             robot_nodes.add(node) 
 
-    initial_belief_support = [(5,5), (5,7), (7,5), (7,7)]
+    initial_belief_support = [(1,1)]
     initial_belief = {}
     for state in initial_belief_support:
         initial_belief[state] = 1 / len(initial_belief_support)   
@@ -400,15 +398,42 @@ def test_case1():
     pomdp = Model(robot_nodes, actions, cost, WS_transition, transition_prob,
                     initial_belief, obstacles, target, end_states)
 
+    # print("states", sorted(list(pomdp.state_action_reward_map.keys())))
+    # tp = pomdp.find_next_states((1,1))
+    # print(tp)
     motion_mdp, AccStates = pomdp.compute_accepting_states()
-
-    H = 3 #Horizon
+    H = 3 # Horizon
     observation_successor_map = pomdp.compute_H_step_space(motion_mdp, H)
 
     #---Online planning starts----
-    obs_current_node = (6, 6)
-    ACP_step = dict() #conformal prediction constraints
+    obs_current_node = pomdp.state_observation_map[initial_belief_support[0]]
+    
+    ACP_step = defaultdict(list)
+    # ACP_step[1] =  [(5, 5), (5, 9)]
+    # ACP_step[2] =  [(5, 5), (5, 9)]
+    # ACP_step[3] =  [(5, 5), (5, 9)]
+    # estimation = [[], [5, 5, 7, 3]]
+    # estimation = [[],[1,3,4,5],[2,1.2,5.5,6.6],[]]
+    # ACP_step = pomdp.build_restrictive_region(estimation, 1, 3)
+    # print("ACP",ACP_step)
+
     obs_mdp, Winning_observation = pomdp.online_compute_winning_region(obs_current_node, AccStates, observation_successor_map, H, ACP_step)
+    print(Winning_observation)
+
+    errorFree = True
+    for tau in ACP_step:
+        for x, y in ACP_step[tau]:
+            obs = pomdp.state_observation_map[(x, y)]
+            if (obs, tau) in Winning_observation:
+                print((x, y), (obs, tau), "error!")
+                errorFree = False
+    print("Error Free:", errorFree)
+
+    for state in initial_belief_support:
+        for actionIndex in range(len(pomdp.actions)):
+            print(actionIndex, pomdp.robot_state_action_map[state][actionIndex])
+            for nxt in pomdp.robot_state_action_map[state][actionIndex]:
+                print(nxt, pomdp.state_observation_map[nxt])
 
 def obstacle_avoidance():
     U = actions = []
@@ -502,4 +527,4 @@ def obstacle_avoidance():
     #         robot_nodes.add(node)
 
 if __name__ == "__main__":
-    obstacle_avoidance()
+    test_case1()
