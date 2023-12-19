@@ -9,8 +9,9 @@ import collections
 import math
 from collections import defaultdict
 import numpy as np
-def print(*args, **kwargs):
-    return
+import copy
+# def print(*args, **kwargs):
+#     return
 class Model:
     def __init__(self, robot_nodes, actions, cost, transition, transiton_prob, initial_belief,
                  obstacles = [], target = [], end_states = set(), state_reward = {}):
@@ -106,7 +107,7 @@ class Model:
         return motion_mdp, AccStates
         
     
-    def online_compute_winning_region(self, obs_initial_node, AccStates, observation_successor_map, H, ACP, dfa):
+    def online_compute_winning_region(self, obs_initial_node, AccStates, observation_successor_map, H, ACP, dfa = []):
         #--------------ONLINE-------------------------
         # Build the N-step reachable support belief MDP, the target set for the support belief MDP is given by AccStates (which is computed offline)
         # ACP_step: computed adaptive conformal prediction constraints
@@ -206,6 +207,9 @@ class Model:
         f_accept_observation.close()
 
         self.winning_obs = Winning_obs
+        print("+++++++++values the same?")
+        print(state_observation_map_new ==self.state_observation_map)
+        print(observation_state_map_new == self.observation_state_map)
         return obs_mdp, Winning_obs, A_valid, observation_state_map_new, state_observation_map_new
 
     def compute_H_step_space(self, motion_mdp, H):
@@ -539,9 +543,9 @@ def test_case1():
     obs_current_node = pomdp.state_observation_map[initial_belief_support[0]]
     
     ACP_step = defaultdict(list)
-    # ACP_step[1] =  [(5, 5), (5, 9)]
-    # ACP_step[2] =  [(5, 5), (5, 9)]
-    # ACP_step[3] =  [(5, 5), (5, 9)]
+    ACP_step[1] =  [(5, 5), (5, 9)]
+    ACP_step[2] =  [(5, 5), (5, 9)]
+    ACP_step[3] =  [(5, 5), (5, 9)]
     # estimation = [[], [5, 5, 7, 3]]
     # estimation = [[],[1,3,4,5],[2,1.2,5.5,6.6],[]]
     # ACP_step = pomdp.build_restrictive_region(estimation, 1, 3)
@@ -549,6 +553,7 @@ def test_case1():
 
     obs_mdp, Winning_observation, A_valid, observation_state_map_new, state_observation_map_new = pomdp.online_compute_winning_region(obs_current_node, AccStates, observation_successor_map, H, ACP_step, dfa)
     print(Winning_observation)
+    
 
     errorFree = True
     for tau in ACP_step:
@@ -558,7 +563,7 @@ def test_case1():
                 print((x, y), (obs, tau), "error!")
                 errorFree = False
     print("Error Free:", errorFree)
-
+    print(A_valid)
     for state in initial_belief_support:
         for actionIndex in range(len(pomdp.actions)):
             print(actionIndex, pomdp.robot_state_action_map[state][actionIndex])
@@ -657,7 +662,7 @@ def obstacle_avoidance():
     #         robot_nodes.add(node)
 
 if __name__ == "__main__":
-    # print("??")
+    
     test_case1()
     # git pull
     # git add model.py
