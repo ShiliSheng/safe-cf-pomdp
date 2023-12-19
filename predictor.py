@@ -11,7 +11,7 @@ from sklearn.model_selection import train_test_split
 import pickle
 import time
 from itertools import chain
-
+import random
 class LSTMModel(nn.Module):
     def __init__(self, input_size, hidden_size, output_size):
         super(LSTMModel, self).__init__()
@@ -33,14 +33,15 @@ class Predictor():
 
     def create_test_dataset(self, df, test_data_file, subgroup_id):
         new_df = pd.DataFrame()
+        total_length = 300
         for pid, group in df.groupby("id"):
             trajectory_length = len(group)
             direction = 1
             cnt = 0
-            cool_down = 5
+            cool_down = random.randint(self.history_length, 2 * self.history_length)
             indices = group.index
             index = 0
-            while cnt < 50:
+            while cnt < total_length:
                 x = (group.loc[indices[index], 'x'])
                 y = (group.loc[indices[index], 'y'])
                 new_df.loc[cnt, str(pid) + "x"] = x
@@ -53,7 +54,7 @@ class Predictor():
                 if index == trajectory_length or index == -1:
                     direction *= -1
                     index += direction
-                    cool_down = 5
+                    cool_down = random.randint(self.history_length, 2 * self.history_length)
 
         new_df = new_df.set_index(pd.RangeIndex(start=-10, stop=-10 + len(new_df)))
         new_df.to_csv(test_data_file + "_" + str(subgroup_id) + ".csv")
@@ -70,7 +71,20 @@ class Predictor():
         # reshaped_dataset = reshaped_dataset.reset_index()
         # reshaped_dataset = reshaped_dataset.set_index(pd.RangeIndex(start=-10, stop=-10 + len(reshaped_dataset)))
         # new_df.to_csv(test_data_file + "_" + str(subgroup_id) + ".csv")
-        
+
+    def create_online_dataset(self, test_dataset, num_agents_tracked):
+        num_agents_total = len(test_dataset.columns) // 2 
+        tracked_agent = random.sample([i for i in range(num_agents_total)], num_agents_tracked)
+        tracked_agent_col = []
+        for i in tracked_agent:
+            tracked_agent_col.append(2 * i)
+            tracked_agent_col.append(2 * i + 1)
+        tracked_agent_col.sort()
+        starting_row = random.randint(0, 40);
+        dynamic_agents = test_dataset.iloc[starting_row:, tracked_agent_col]
+        dynamic_agents = dynamic_agents.set_index(pd.RangeIndex(start=-10, stop=-10 + len(dynamic_agents)))
+        return dynamic_agents
+           
     def preprocess(self, raw_data_file, train_data_file, validation_data_file, test_data_file):
         csv_columns = ["frame_id", "id", "x", "z", "y", "vel_x", "vel_z", "vel_y"]
         # read from csv => fill traj table
@@ -99,17 +113,31 @@ class Predictor():
         train_id, test_id = train_test_split(raw_dataset.id.unique(), test_size= 1 / 10, random_state=42)
         train_id, validation_id = train_test_split(train_id, test_size = 0.2, random_state = 42)
         train_id, validation_id = set(train_id), set(validation_id)
+        test_id = set(test_id)
 
         train_raw_dataset = raw_dataset[raw_dataset.id.isin(train_id)]
         validation_raw_dataset = raw_dataset[raw_dataset.id.isin(validation_id)]
+        test_raw_datasete = raw_dataset[raw_dataset.id.isin(test_id)]
 
+        print("len", len(train_id), len(validation_id), len(test_id))
+        self.create_test_dataset(test_raw_datasete, test_data_file, 0)
+        # random_seed = 42
+        # random.seed(random_seed)
+        # n_subgroup = 10
+        # # k = len(test_id) // 3 * 2
+        # k = 10
+        # test_id = list(test_id)
+        # for i in range(n_subgroup):
+        #     sub_group = set(random.sample(test_id, k))
+        #     test_raw_dataset = raw_dataset[raw_dataset.id.isin(sub_group)]
+        #     self.create_test_dataset(test_raw_dataset, test_data_file, i)
         n_test = len(test_id)
-        n_subgroup = 4
-        group = n_test // n_subgroup
-        for i in range(n_subgroup):
-            sub_group = set(test_id[i * group: (i + 1)* group])
-            test_raw_dataset = raw_dataset[raw_dataset.id.isin(sub_group)]
-            self.create_test_dataset(test_raw_dataset, test_data_file, i)
+        # n_subgroup = 4
+        # group = n_test // n_subgroup
+        # for i in range(n_subgroup):
+        #     sub_group = set(test_id[i * group: (i + 1)* group])
+        #     test_raw_dataset = raw_dataset[raw_dataset.id.isin(sub_group)]
+        #     self.create_test_dataset(test_raw_dataset, test_data_file, i)
         # train_raw_dataset.to_csv(path + "raw_train.csv")
         # validation_raw_dataset.to_csv(path + "raw_validation.csv")
         # test_raw_dataset.to_csv(path + "raw_test.csv")
@@ -262,7 +290,7 @@ class Predictor():
         for i in range(starting_index, len(dynamic_agents.columns), 2):
             values = dynamic_agents.loc[cur_time - history_length + 1: cur_time, [dynamic_agents.columns[i], dynamic_agents.columns[i+1]]]
             test = torch.tensor(np.array(values), dtype=torch.float32).clone().detach().unsqueeze(0)  # Add batch dimension
-            print(values.values)
+            # print(values.values)
             p = self.predict_case(test)
             estimation.append(p)
         reshaped =  [list(chain(*group)) for group in zip(*estimation)]
@@ -281,7 +309,7 @@ class Predictor():
         N = len(A) // 2
         distance = 0
         for i in range(0, N):
-            distance += ((A[i * 2] - B[i* 2]) ** 2 + (A[2 * i+1] - B[2 * i+1]) ** 2) ** (0.5)
+            distance += ((A[i * 2] - B[i* 2]) ** 2 + (A[2 * i + 1] - B[2 * i + 1]) ** 2) ** (0.5)
             # distance += abs(A[i] - B[i]) + abs(A[i+1] - B[i+1])
         distance /= N
         # distance = np.linalg.norm(A - B)
