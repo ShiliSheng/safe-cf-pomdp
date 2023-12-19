@@ -106,16 +106,14 @@ class Model:
         return motion_mdp, AccStates
         
     
-    def online_compute_winning_region(self, obs_initial_node, AccStates, observation_successor_map, H, ACP):
+    def online_compute_winning_region(self, obs_initial_node, AccStates, observation_successor_map, H, ACP, dfa):
         #--------------ONLINE-------------------------
         # Build the N-step reachable support belief MDP, the target set for the support belief MDP is given by AccStates (which is computed offline)
         # ACP_step: computed adaptive conformal prediction constraints
         U = self.actions
         C = self.cost
-        # ACP = dict()
-        # for i in range(1, H+1): 
-        #     ACP[i] = ()          
-            #ACP[i] = ACP_step[i]
+        observation_state_map = self.observation_state_map
+        state_observation_map = self.state_observation_map
         obstacle_static = set(self.obstacles)
         obstacle_new = dict()
         for i in range(H):
@@ -128,42 +126,32 @@ class Model:
         obs_initial_node_count = (obs_initial_node, 0)
         H_step_obs = observation_successor_map[obs_initial_node, H]
         obs_nodes_reachable = dict()
-        obs_nodes_reachable[obs_initial_node_count] = {frozenset(): 1.0}
+        obs_nodes_reachable[obs_initial_node_count] = {frozenset(['target']): 1.0}
         for oc in range(1, H+1):
             for o_node in self.obs_nodes:
                 onode_count = (o_node, oc)
-                support_set = self.observation_state_map[o_node]
-                if support_set.issubset(set(AccStates)):
+                support_set = set(observation_state_map[o_node])
+                SS[oc] = support_set.intersection(obstacle_new[oc])
+                if len(SS[oc]) > 0:
+                    o_node_not_obstacle = support_set.difference(SS[oc])
+                    for ws_node in SS[oc]:
+                        obs_nodes_reachable[(ws_node, oc)] = {frozenset(['obstacle']): 1.0}
+                        observation_state_map[ws_node] = [ws_node]
+                        state_observation_map[ws_node] = ws_node
+                        ws_obstacle = (ws_node, oc)
+                        observation_obstacle.add(ws_obstacle)
+                    if len(o_node_not_obstacle) > 0:
+                        observation_state_map[o_node] = o_node_not_obstacle
+                        if o_node_not_obstacle.issubset(set(AccStates)):
+                            obs_nodes_reachable[onode_count] = {frozenset(['target']): 1.0}
+                            observation_target.add(onode_count)
+                        else:
+                            obs_nodes_reachable[onode_count] = {frozenset(): 1.0}  
+                elif support_set.issubset(set(AccStates)):
                     obs_nodes_reachable[onode_count] = {frozenset(['target']): 1.0}
                     observation_target.add(onode_count)
                 else:
-                    SS[oc] = support_set.intersection(obstacle_new[oc])
-                    o_node_not_obstacle = support_set.difference(SS[oc])
-                    if len(SS[oc]) > 0:
-                        for ws_node in SS[oc]:
-                            obs_nodes_reachable[(ws_node, oc)] = {frozenset(['obstacle']): 1.0}
-                            self.observation_state_map[ws_node] = [ws_node]
-                            # s1 s2 s3 s4 = > o1
-                            # s1 => no1
-                            # s2 s3 s4 => o1
-                            
-                            # online WR compuation => ACC 
-                            # state -> observation 
-                            # pomcp.select( state -> observation )
-                            # reverse()
-                            # s1 s2 s3 s4 = > o1
-
-                            ws_obstacle = (ws_node, oc)
-                            observation_obstacle.add(ws_obstacle)
-                        if len(o_node_not_obstacle) > 0:
-                            self.observation_state_map[o_node] = o_node_not_obstacle
-                            if o_node_not_obstacle.issubset(set(AccStates)):
-                                obs_nodes_reachable[onode_count] = {frozenset(['target']): 1.0}
-                                observation_target.add(onode_count)
-                            else:
-                                obs_nodes_reachable[onode_count] = {frozenset(): 1.0}                           
-                    else:
-                        obs_nodes_reachable[onode_count] = {frozenset(): 1.0}
+                    obs_nodes_reachable[onode_count] = {frozenset(): 1.0}
         print('Number of target observation states: %s' %len(observation_target))
         print('Number of obstacle observation states: %s' %len(observation_obstacle))
 
@@ -173,13 +161,13 @@ class Model:
         obs_edges = dict()
         for o_node in obs_nodes_reachable.keys():
             oc = o_node[1]
-            support_set = list(self.observation_state_map[o_node[0]])
-            #print(support_set)
+            support_set = list(observation_state_map[o_node[0]])
+            print(support_set)
             for node in support_set:  
                 for k, u in enumerate(U):
                     tnode_set = self.robot_state_action_map[node][k]
                     for ttnode in list(tnode_set.keys()):
-                        t_obs = self.state_observation_map[ttnode]
+                        t_obs = state_observation_map[ttnode]
                         if oc < H: 
                             tnode = (t_obs, oc+1)
                         else:
@@ -190,29 +178,11 @@ class Model:
         obs_mdp = Motion_MDP_label(obs_nodes_reachable, obs_edges, U, obs_initial_node_count, obs_initial_label)
 
         #----
-        #reach_avoid = '! obstacle U target'
-        statenum = 3
-        init = 1 
-        edges = {(1, 1): ['00'], 
-                (1, 2): ['01' '11'], 
-                (1, 3): ['10'], 
-                (2, 2): ['00', '01', '10', '11'],
-                (3, 3): ['00', '01', '10', '11'], 
-                }
-        aps = ['obstacle', 'target']
-        acc = [[{2}]]
-        dfa = Dfa(statenum, init, edges, aps, acc)
-        self.dfa = dfa
-        print('DFA done.')
-
-        #----
         accs = []
         for obs_state in obs_mdp.nodes():
             for obs_label, obs_prob in obs_mdp.nodes[obs_state]['label'].items():
-                for acc in dfa.graph['accept']:
-                    I = acc[0]
-                    Ip = (obs_state, obs_label, I)
-                    accs.append([Ip])
+                if obs_label in {frozenset({'target'})}:
+                    accs.append([obs_state])
         print('Number of accepting states in observation space: %s' % len(accs))
 
         prod_dfa_obs = Product_Dfa(obs_mdp, dfa)
@@ -251,33 +221,44 @@ class Model:
                 onode = (i, j)
                 self.obs_nodes.add(onode)
 
+        for obs in self.obstacles:
+            self.obs_nodes.add(obs)
+
         #----
         self.observation_state_map = dict()
         for o_node in self.obs_nodes:
-            ox = o_node[0]
-            oy = o_node[1]
-            support = set()
-            for fnode in motion_mdp.nodes(): 
-                fx = fnode[0]
-                fy = fnode[1]    
-                if (abs(fx-ox) <= 2) and (abs(fy-oy) <= 2):
-                    state = fnode
-                    support.add(state)
-            self.observation_state_map[o_node] = support
+            if o_node in self.obstacles:
+                self.observation_state_map[o_node] = [o_node]
+            else:
+                ox = o_node[0]
+                oy = o_node[1]
+                support = set()
+                for fnode in motion_mdp.nodes():
+                    if fnode not in self.obstacles: 
+                        fx = fnode[0]
+                        fy = fnode[1]    
+                        if (abs(fx-ox) <= 2) and (abs(fy-oy) <= 2):
+                            state = fnode
+                            support.add(state)
+                self.observation_state_map[o_node] = support
 
         #----
         self.state_observation_map = dict()
         for fnode in motion_mdp.nodes(): 
-            fx = fnode[0]
-            fy = fnode[1] 
-            # support_obs = set()  
-            for o_node in self.obs_nodes:
-                ox = o_node[0]
-                oy = o_node[1]  
-                if (abs(fx-ox) <= 2) and (abs(fy-oy) <= 2):
-                    # support_obs.add(o_node)
-                    self.state_observation_map[fnode] = o_node
-                    break
+            if fnode in self.obstacles:
+                self.state_observation_map[fnode] = fnode
+            else:
+                fx = fnode[0]
+                fy = fnode[1] 
+                # support_obs = set()  
+                for o_node in self.obs_nodes:
+                    if o_node not in self.obstacles:
+                        ox = o_node[0]
+                        oy = o_node[1]  
+                        if (abs(fx-ox) <= 2) and (abs(fy-oy) <= 2):
+                            # support_obs.add(o_node)
+                            self.state_observation_map[fnode] = o_node
+                            break
 
         #----calculate H-step reachable set------------
         observation_successor_map = dict()
@@ -544,6 +525,21 @@ def test_case1():
     H = 3 # Horizon
     observation_successor_map = pomdp.compute_H_step_space(motion_mdp, H)
 
+    #----compute DFA----
+    #reach_avoid = '! obstacle U target'
+    statenum = 3
+    init = 1 
+    edges = {(1, 1): ['00'], 
+            (1, 2): ['01' '11'], 
+            (1, 3): ['10'], 
+            (2, 2): ['00', '01', '10', '11'],
+            (3, 3): ['00', '01', '10', '11'], 
+            }
+    aps = ['obstacle', 'target']
+    acc = [[{2}]]
+    dfa = Dfa(statenum, init, edges, aps, acc)
+    print('DFA done.')
+
     #---Online planning starts----
     obs_current_node = pomdp.state_observation_map[initial_belief_support[0]]
     
@@ -556,7 +552,7 @@ def test_case1():
     # ACP_step = pomdp.build_restrictive_region(estimation, 1, 3)
     # print("ACP",ACP_step)
 
-    obs_mdp, Winning_observation = pomdp.online_compute_winning_region(obs_current_node, AccStates, observation_successor_map, H, ACP_step)
+    obs_mdp, Winning_observation = pomdp.online_compute_winning_region(obs_current_node, AccStates, observation_successor_map, H, ACP_step, dfa)
     print(Winning_observation)
 
     errorFree = True
