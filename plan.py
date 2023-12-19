@@ -19,27 +19,55 @@ import matplotlib.patches as patches
 from PIL import Image
 import imageio
 import os
+from datetime import datetime
 
-# def get_cf_score(dynamic_agents, cur_time, estimation):
-#     values = dynamic_agents.loc[cur_time,:].values[2:]
-#     return np.linalg.norm(values - estimation)
-#     # score = 0
-    # num_agents = get_num_agents(dynamic_agents)
-    # for i in range(2, num_agents, 2):
-    #     score += (dynamic_agents.loc[cur_time, ] - B[i][0]) ** 2 + (A[i][1] - B[i][0]) ** 2
-    # return score ** (0.5)
+def get_min_distance(state_ground_truth, Y_cur):
+    #TODO
+    cx, cy = state_ground_truth
+    minD = float("inf")
+    for j in range(len(Y_cur) // 2):
+        px, py = Y_cur[2 * j], Y_cur[2 * j + 1]
+        t = ((cx - px) ** 2 + (cy - py) ** 2) ** 0.5
+        minD = min(minD, t)
+    return minD
+def plot(state_ground_truth, pomcp, Y_cur, estimation_moving_agents,  H, log_time, i_episode, cur_time, minD):
+    shieldLevel = pomcp.shieldLevel
+    fig, ax = plt.subplots()   
+    ax.set_aspect('equal')             
+    plt.xlim(0, 22)
+    plt.ylim(0, 22)
+    # circle = patches.Circle(state_ground_truth, radius=0.5, edgecolor='black', facecolor='none')
+    # ax.add_patch(circle)
 
-def compute_prediction_error(A, B):
-    N = len(A)
-    distance = 0
-    for i in range(0, N, 2):
-        distance = (A[i] - B[i]) ** 2 + (A[i+1] - B[i+1]) ** 2
-    distance = distance ** 0.5 / N
-    # distance = np.linalg.norm(A - B)
-    # print("distance",distance)
-    return distance
+    plt.scatter(state_ground_truth[0], state_ground_truth[1], marker = '*', color = "black")
+    for (x, y) in pomcp.root.belief:
+        plt.scatter(x, y, marker = '*', alpha=0.5, color = "black")
+    
+    cmap = plt.get_cmap('tab10')
+    for i in range(0, len(Y_cur), 2):
+        plt.scatter(Y_cur[i], Y_cur[i+1], marker = '.', color = cmap(i//2), alpha=1)
+
+    for tau in range(1, H + 1):
+        for j in range(0, len(estimation_moving_agents[cur_time][tau]), 2):
+            x, y = estimation_moving_agents[cur_time][tau][j], estimation_moving_agents[cur_time][tau][j + 1]
+            r = constraints[cur_time + 1][tau]
+            # true_x, true_y = dynamic_agents.loc[cur_time + tau, :].values[j + 1], dynamic_agents.loc[cur_time + tau, :].values[j + 2]
+            # print("radius", x, y, r, true_x, true_y)
+            a = (0.5 - 0.2) / (1 - H)
+            b = (0.5 * H - 0.2) / (H - 1)
+            plt.scatter(x, y, color = cmap(j//2), marker = '.', alpha = a * tau + b)
+            circle = patches.Circle((x,y), radius = r, edgecolor=cmap(i//2), facecolor=cmap(j//2), alpha =  a * tau + b)
+            ax.add_patch(circle)
+    plt.title("Time: {}, Action: {}, MinDistance:{}".format(cur_time, pomcp.pomdp.actions[actionIndex], str(minD)[:3]))
+    figure_path = "./figures/{}/Episode_{}/".format(log_time, i_episode)
+    if not os.path.exists(figure_path):
+        os.makedirs(figure_path)
+    plt.savefig(figure_path + "figure_{}.jpg".format(str(cur_time).zfill(3)), dpi=300)
+    plt.close()
 
 if __name__ == "__main__":
+    log_time = f"{datetime.now().strftime('%Y-%m-%d_%H-%M')}"
+
     #Settings for LSTM trajectory prediction
     prediction_model = Predictor()
     prediction_model.load_model('./OpenTraj/datasets/ETH/seq_eth/model_weights.pth')
@@ -65,8 +93,11 @@ if __name__ == "__main__":
     WS_transition[4] = [(0, 0)]                         # ST
 
     obstacles =  [(3, 7)]
-    target = [(19, 19)]
-    end_states = set([(19,1)])
+    target = [(17, 17), (17, 19), (19, 17), (19, 19)]
+    end_states = set(target)
+    state_reward = defaultdict(int)
+    for state in target:
+        state_reward[state] = 1000
 
     robot_nodes = set()
     for i in range(1, 20, 2):
@@ -74,35 +105,29 @@ if __name__ == "__main__":
             node = (i, j)
             robot_nodes.add(node) 
 
-    initial_belief_support = [(5,5), (5,7)]
+    initial_belief_support = [(1,1), (1,3)]
     initial_belief = {}
     for state in initial_belief_support:
         initial_belief[state] = 1 / len(initial_belief_support)
 
     pomdp = Model(robot_nodes, actions, cost, WS_transition, transition_prob,
-                     initial_belief, obstacles, target, end_states)
-
-    pomcp = POMCP(pomdp)
+                     initial_belief, obstacles, target, end_states, state_reward)
+    shieldLevel = 1
+    pomcp = POMCP(pomdp, shieldLevel, prediction_model.prediction_length, end_states)
 
     motion_mdp, AccStates = pomcp.pomdp.compute_accepting_states() 
     observation_successor_map = pomcp.pomdp.compute_H_step_space(motion_mdp, H)
     step = 0
-    discounted_reward = 0
-    undiscounted_redward = 0
     num_episodes = 1
-    max_steps = 15
+    max_steps = 200
 
     # Settings for conformal prediction
     path = "./OpenTraj/datasets/ETH/seq_eth/"
-    dynamic_agents =  pd.read_csv(path + "test_dynammic_agents_1.csv")
-    starting_col_index = 1 # in the dataframe, where is the starting col of values
-
-    # print(dynamic_agents.head())
-    #           agent1, anget2  angentN
-    # t=0       (x,y)       .        .
-    # ...           .       .        .  
-    # t=inf         .       .       (x,y)
-    num_agents_tracked = len(dynamic_agents.columns) // 2 -1
+    test_dataset =  pd.read_csv(path + "test_dynammic_agents_0.csv", index_col = 0)
+    starting_col_index = 0 # in the dataframe, where is the starting col of values
+    num_agents_tracked = 3
+    
+    
     target_failure_prob_delta = 0.1
     acp_learing_gamma = 0.08
     failure_prob_delta = [[0] * (H+1) for _ in range(max_steps + 10)]
@@ -111,19 +136,25 @@ if __name__ == "__main__":
     estimation_moving_agents = [[0 for _ in range(num_agents_tracked * 2)] * (H+1) for _ in range(max_steps + 10)] 
     # cf_scores = [[0] * (H+1) for _ in range(max_steps + 10)]
     cf_scores = defaultdict(lambda: SortedList([float('inf')]))
+    safeDistance = 0.5
 
     for tau in range(1, H + 1):
         failure_prob_delta[0][tau] = target_failure_prob_delta
 
-    for _ in range(num_episodes):
+    for i_episode in range(num_episodes):
+        
+        dynamic_agents = prediction_model.create_online_dataset(test_dataset, num_agents_tracked)
+
         pomcp.reset_root()
         state_ground_truth = pomcp.root.sample_state_from_belief()
         print(state_ground_truth, "current state")
         obs_current_node = pomcp.get_observation(state_ground_truth)
         print("current observation", obs_current_node)
         cur_time = -1
+        discounted_reward = 0
+        undiscounted_reward = 0
 
-        while cur_time < max_steps:
+        while cur_time < max_steps and state_ground_truth not in pomcp.pomdp.end_states:
             cur_time += 1
 
             # Line 3, 4 TODO preprocessing
@@ -134,15 +165,21 @@ if __name__ == "__main__":
             if cur_time < H: # assuming the agent is not starting until Timestamp H
                 continue
 
-            Y_cur = dynamic_agents.loc[cur_time,:].values[starting_col_index:] # TODO check index
+            Y_cur = dynamic_agents.loc[cur_time,:].values[starting_col_index:] # Check index
+
+            minD = get_min_distance(state_ground_truth, Y_cur)
 
             for tau in range(1, H + 1):
                 # Line 7
                 Y_est = estimation_moving_agents[cur_time-tau][tau]
-                estimation_error = compute_prediction_error(Y_cur, Y_est)# TODO check formula of Line 7
+                estimation_error = prediction_model.compute_prediction_error(Y_cur, Y_est)# TODO check formula of Line 7
                 # cf_scores[cur_time][tau] = estimation_error
                 cf_scores[tau].add(estimation_error)
-
+                if (estimation_error > 1):
+                    print("________",cur_time, tau, cur_time-tau)
+                    print(Y_cur)
+                    print(Y_est)
+                # print("estimation_error", estimation_error)
                 # Line 6
                 error[cur_time][tau] = 0 if estimation_error <= constraints[cur_time][tau] else 1 # a
                 failure_prob_delta[cur_time + 1][tau] = failure_prob_delta[cur_time][tau] +  acp_learing_gamma * (target_failure_prob_delta * error[cur_time][tau])
@@ -158,10 +195,10 @@ if __name__ == "__main__":
                 # radius = values[q-1]
                 radius = cf_scores[tau][q - 1]
                 constraints[cur_time + 1][tau] = radius
-                
-            print(constraints[cur_time + 1][tau], "_______________")
-
-            ACP_step = pomdp.build_restrictive_region(estimation_moving_agents[cur_time], constraints[cur_time+1][tau], H)
+                # print("radius", radius, cf_scores[tau], q-1, N)
+            # print(constraints[cur_time + 1][tau], "_______________")
+            ACP_step = defaultdict(list)
+            ACP_step = pomdp.build_restrictive_region(estimation_moving_agents[cur_time], constraints[cur_time+1][tau], H, safeDistance)
             obs_mdp, Winning_observation = pomcp.pomdp.online_compute_winning_region(obs_current_node, AccStates, observation_successor_map, H, ACP_step)
             
             actionIndex = pomcp.select_action()
@@ -169,44 +206,22 @@ if __name__ == "__main__":
             reward = pomcp.step_reward(state_ground_truth, actionIndex)
             obs_current_node = pomcp.get_observation(next_state_ground_truth)
 
-            fig, ax = plt.subplots()   
-            ax.set_aspect('equal')             
-            plt.xlim(0, 22)
-            plt.ylim(0, 22)
-            # circle = patches.Circle(state_ground_truth, radius=0.5, edgecolor='black', facecolor='none')
-            # ax.add_patch(circle)
-
-            plt.scatter(state_ground_truth[0], state_ground_truth[1], marker = '*', color = "black")
-            for (x, y) in pomcp.root.belief:
-                plt.scatter(x, y, marker = '*', alpha=0.5, color = "black")
-            
-            cmap = plt.get_cmap('tab10')
-            for i in range(0, len(Y_cur), 2):
-                plt.scatter(Y_cur[i], Y_cur[i+1], marker = '.', color = cmap(i//2), alpha=1)
-
-            for tau in range(1, H + 1):
-                for j in range(0, len(estimation_moving_agents[cur_time][tau]), 2):
-                    x, y = estimation_moving_agents[cur_time][tau][j], estimation_moving_agents[cur_time][tau][j + 1]
-                    r = constraints[cur_time + 1][tau]
-                    # true_x, true_y = dynamic_agents.loc[cur_time + tau, :].values[j + 1], dynamic_agents.loc[cur_time + tau, :].values[j + 2]
-                    # print("radius", x, y, r, true_x, true_y)
-                    a = (0.5 - 0.2) / (1 - H)
-                    b = (0.5 * H - 0.2) / (H - 1)
-                    plt.scatter(x, y, color = cmap(j//2), marker = '.', alpha = a * tau + b)
-                    circle = patches.Circle((x,y), radius = r, edgecolor=cmap(i//2), facecolor=cmap(j//2), alpha =  a * tau + b)
-                    ax.add_patch(circle)
-            plt.title("Time: {}, Action: {}".format(cur_time, actions[actionIndex]))
-            plt.savefig("./figures/figure_{}.jpg".format(str(cur_time).zfill(3)), dpi=300)
+            plot(state_ground_truth, pomcp, Y_cur, estimation_moving_agents,  H, log_time, i_episode, cur_time, minD)
 
             print("=====step", cur_time, "s", "action", actions[actionIndex], state_ground_truth, "s'", next_state_ground_truth,
-                    "observation", obs_current_node, pomcp.root.belief, Y_cur)
+                    "observation", obs_current_node, pomcp.root.belief, Y_cur, "undiscounted reward", undiscounted_reward)
+            print("+++++",ACP_step,"*****")
+
             pomcp.update(actionIndex, obs_current_node)
             state_ground_truth = next_state_ground_truth
             discounted_reward += pomcp.gamma * reward
-            undiscounted_redward += reward
-        
-        image_files = sorted([f for f in os.listdir('./figures/') if f.endswith('.jpg')])
-        images = [Image.open(os.path.join('./figures/', f)) for f in image_files]
-        imageio.mimsave('./data/output.gif', images, duration=0.5)  # 设置每帧之间的时间间隔（单位：秒）
-
-
+            undiscounted_reward += reward
+            
+        figure_path = "./figures/{}/Episode_{}/".format(log_time, i_episode)
+        def plot_gif(figure_path):
+            image_files = sorted([f for f in os.listdir(figure_path) if f.endswith('.jpg')])
+            images = [Image.open(os.path.join(figure_path, f)) for f in image_files]
+            gif_path = figure_path.replace("figures", "gifs")
+            if not os.path.exists(directogif_pathry_path):
+                os.makedirs(gif_path)
+            imageio.mimsave(gif_path + 'output.gif', images, duration=0.5)  # 设置每帧之间的时间间隔（单位：秒）
