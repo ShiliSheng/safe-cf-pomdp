@@ -143,6 +143,16 @@ class Model:
                         for ws_node in SS[oc]:
                             obs_nodes_reachable[(ws_node, oc)] = {frozenset(['obstacle']): 1.0}
                             self.observation_state_map[ws_node] = [ws_node]
+                            # s1 s2 s3 s4 = > o1
+                            # s1 => no1
+                            # s2 s3 s4 => o1
+                            
+                            # online WR compuation => ACC 
+                            # state -> observation 
+                            # pomcp.select( state -> observation )
+                            # reverse()
+                            # s1 s2 s3 s4 = > o1
+
                             ws_obstacle = (ws_node, oc)
                             observation_obstacle.add(ws_obstacle)
                         if len(o_node_not_obstacle) > 0:
@@ -162,6 +172,7 @@ class Model:
         
         obs_edges = dict()
         for o_node in obs_nodes_reachable.keys():
+            oc = o_node[1]
             support_set = list(self.observation_state_map[o_node[0]])
             #print(support_set)
             for node in support_set:  
