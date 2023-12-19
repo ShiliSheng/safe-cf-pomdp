@@ -19,6 +19,7 @@ import matplotlib.patches as patches
 from PIL import Image
 import imageio
 import os
+import copy
 from datetime import datetime
 
 def get_min_distance(state_ground_truth, Y_cur):
@@ -30,6 +31,15 @@ def get_min_distance(state_ground_truth, Y_cur):
         t = ((cx - px) ** 2 + (cy - py) ** 2) ** 0.5
         minD = min(minD, t)
     return minD
+
+def plot_gif(figure_path):
+            image_files = sorted([f for f in os.listdir(figure_path) if f.endswith('.jpg')])
+            images = [Image.open(os.path.join(figure_path, f)) for f in image_files]
+            gif_path = figure_path.replace("figures", "gifs")
+            if not os.path.exists(gif_path):
+                os.makedirs(gif_path)
+            imageio.mimsave(gif_path + 'output.gif', images, duration=0.5)  # 设置每帧之间的时间间隔（单位：秒）
+
 def plot(state_ground_truth, pomcp, Y_cur, estimation_moving_agents,  H, log_time, i_episode, cur_time, minD):
     shieldLevel = pomcp.shieldLevel
     fig, ax = plt.subplots()   
@@ -217,32 +227,29 @@ if __name__ == "__main__":
             ACP_step = defaultdict(list)
             ACP_step = pomdp.build_restrictive_region(estimation_moving_agents[cur_time], constraints[cur_time+1][tau], H, safeDistance)
 
-            # save states
-            obs_mdp, Winning_observation, A_valid, observation_state_map_new, state_observation_map_new = pomcp.pomdp.online_compute_winning_region(obs_current_node, AccStates, observation_successor_map, H, ACP_step, dfa)
-            actionIndex = pomcp.select_action() # use updated states
-            # restore states
+            state_observation_map_copy = copy.deepcopy(pomcp.pomdp.state_observation_map)    # save state_map
+            observation_state_map_copy = copy.deepcopy(pomcp.pomdp.observation_state_map)    # save state_map
 
+            # obs_mdp, Winning_observation, A_valid, observation_state_map_new, state_observation_map_new = 
+            pomcp.pomdp.online_compute_winning_region(obs_current_node, AccStates, observation_successor_map, H, ACP_step, dfa)
+
+            actionIndex = pomcp.select_action()                                             # compute using generated WR and updated state_map
             next_state_ground_truth = pomcp.step(state_ground_truth, actionIndex)
             reward = pomcp.step_reward(state_ground_truth, actionIndex)
             obs_current_node = pomcp.get_observation(next_state_ground_truth)
-
             plot(state_ground_truth, pomcp, Y_cur, estimation_moving_agents,  H, log_time, i_episode, cur_time, minD)
-
             print("=====step", cur_time, "s", "action", actions[actionIndex], state_ground_truth, "s'", next_state_ground_truth,
                     "observation", obs_current_node, pomcp.root.belief, Y_cur, "undiscounted reward", undiscounted_reward)
             print("+++++",ACP_step,"*****")
-
             pomcp.update(actionIndex, obs_current_node)
             state_ground_truth = next_state_ground_truth
+
+            pomcp.pomdp.state_observation_map = state_observation_map_copy                # restore state_map
+            pomcp.observation_state_map = observation_state_map_copy                    # restore state_map
+
             discounted_reward += pomcp.gamma * reward
             undiscounted_reward += reward
             
         figure_path = "./figures/{}/Episode_{}/".format(log_time, i_episode)
-
-        def plot_gif(figure_path):
-            image_files = sorted([f for f in os.listdir(figure_path) if f.endswith('.jpg')])
-            images = [Image.open(os.path.join(figure_path, f)) for f in image_files]
-            gif_path = figure_path.replace("figures", "gifs")
-            if not os.path.exists(gif_path):
-                os.makedirs(gif_path)
-            imageio.mimsave(gif_path + 'output.gif', images, duration=0.5)  # 设置每帧之间的时间间隔（单位：秒）
+        plot_gif(figure_path)
+        
