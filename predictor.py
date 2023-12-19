@@ -307,20 +307,17 @@ class Predictor():
 
     def compute_prediction_error(self, A, B):
         N = len(A) // 2
-        distance = 0
+        cf_distance = 0
         for i in range(0, N):
-            distance += ((A[i * 2] - B[i* 2]) ** 2 + (A[2 * i + 1] - B[2 * i + 1]) ** 2) ** (0.5)
+            distance = ((A[i * 2] - B[i* 2]) ** 2 + (A[2 * i + 1] - B[2 * i + 1]) ** 2) ** (0.5)
+            # cf_distance += distance
+            cf_distance = max(cf_distance, distance)
             # distance += abs(A[i] - B[i]) + abs(A[i+1] - B[i+1])
-        distance /= N
+        # cf_distance /= N
         # distance = np.linalg.norm(A - B)
         # print("distance",distance)
-        return distance
+        return cf_distance
     
-    # def compute_prediction_error(self, A, B):
-    #     N = len(A)
-    #     distance = 0
-    #     for (x, est_x) in zip(A, B):
-    #         distance += (x - est_x)
 
 if __name__ == "__main__":
     path = './OpenTraj/datasets/ETH/seq_eth/'
