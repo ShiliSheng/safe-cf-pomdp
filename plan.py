@@ -112,6 +112,23 @@ if __name__ == "__main__":
 
     pomdp = Model(robot_nodes, actions, cost, WS_transition, transition_prob,
                      initial_belief, obstacles, target, end_states, state_reward)
+
+    #----compute DFA----
+    #reach_avoid = '! obstacle U target'
+    statenum = 3
+    init = 1 
+    edges = {(1, 1): ['00'], 
+            (1, 2): ['01' '11'], 
+            (1, 3): ['10'], 
+            (2, 2): ['00', '01', '10', '11'],
+            (3, 3): ['00', '01', '10', '11'], 
+            }
+    aps = ['obstacle', 'target']
+    acc = [[{2}]]
+    dfa = Dfa(statenum, init, edges, aps, acc)
+    print('DFA done.')
+
+    #----
     shieldLevel = 1
     pomcp = POMCP(pomdp, shieldLevel, prediction_model.prediction_length, end_states)
 
@@ -201,7 +218,7 @@ if __name__ == "__main__":
             ACP_step = pomdp.build_restrictive_region(estimation_moving_agents[cur_time], constraints[cur_time+1][tau], H, safeDistance)
 
             # save states
-            obs_mdp, Winning_observation = pomcp.pomdp.online_compute_winning_region(obs_current_node, AccStates, observation_successor_map, H, ACP_step)
+            obs_mdp, Winning_observation, A_valid, observation_state_map_new, state_observation_map_new = pomcp.pomdp.online_compute_winning_region(obs_current_node, AccStates, observation_successor_map, H, ACP_step, dfa)
             actionIndex = pomcp.select_action() # use updated states
             # restore states
 
