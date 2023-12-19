@@ -145,7 +145,7 @@ class POMCPNode:
         return state in self.belief
     
 class POMCP:
-    def __init__(self, pomdp, shieldLevel = 0, shieldHorizon = 5, end_states = set(), target = set(),  constant = 1000, maxDepth = 100 ):
+    def __init__(self, pomdp, shieldLevel = 0, shieldHorizon = 5, end_states = set(), target = set(),  constant = 2000, maxDepth = 100 ):
 
         # def __init__(self, initial_belief, actions, robot_state_action_map, state_to_observation, state_action_reward_map, 
         #              end_states, constant = 1000, maxDepth = 100, targets = set()):
@@ -153,7 +153,7 @@ class POMCP:
         # c (float): Parameter that controls the importance of exploration in the UCB heuristic. Default value is 1.
         # no_particles (int): Controls the maximum number of particles that will be kept at each node 
         #                       and the number of particles that will be sampled from the posterior belief after an action is taken.
-        self.numSimulations = 2 ** 12
+        self.numSimulations = 2 ** 10
         self.gamma = 0.95
         self.e = 0.05
         self.noParticles = 1200
@@ -303,37 +303,36 @@ class POMCP:
             self.PeakTreeDepth = 0
             reward = self.simulateV(state, self.root)
             if (self.verbose >= 2):
-                print("==MCTSMCT after num simulation", n)
+                print("==MCTS after num simulation", n)
+        for actionIndex in self.root.children:
+            qnode = self.root.get_child_by_action_index(actionIndex)
+            print("MCTS",actionIndex, qnode.v, qnode.n)
         if self.verbose >= 1:
             print("finishing all simulations", self.numSimulations)
-        
+            
 
     def simulateV(self, state, vnode):
+        if (self.TreeDepth >= self.maxDepth): 
+            return 0
         self.PeakTreeDepth = self.TreeDepth
         if not vnode.children:
             self.expand(vnode, state)
 
-        if (self.TreeDepth >= self.maxDepth): 
-            return 0
-        
         actionIndex = self.greedyUCB(vnode, True)
         if self.TreeDepth <= self.horizon and self.shieldLevel == ON_THE_FLY:
             if not vnode.have_state_in_belief_support(state): 
-                qparent = vnode.getParent() 
-                parentActionIndex = qparent.getH()
-                vparent = qparent.getParent() 
-                print(parentActionIndex,"checking", self.TreeDepth, state, pomdp.state_observation_map[state], vnode.belief.keys())
+                # print("checking", self.TreeDepth, state, pomdp.state_observation_map[state], vnode.belief.keys())
                 # if (self.TreeDepth == 1):
                 #     print(self.TreeDepth, state, vnode.getH())
-                vnode.add_particle(state)
                 if not self.is_current_belief_winning(vnode, self.TreeDepth): #TODO
                     qparent = vnode.getParent() 
                     parentActionIndex = qparent.getH()
                     vparent = qparent.getParent() 
                     vparent.add_illegal_action_index(parentActionIndex)
-                    print("not winning", self.TreeDepth, parentActionIndex)
-                else:
-                    print("winning")
+                    # print("not winning", self.TreeDepth, parentActionIndex, state, self.get_observation(state))
+                    # print(self.pomdp.winning_obs)
+                # else:
+                    # print("winning")
         if self.TreeDepth >= 1:
             vnode.add_particle(state)
 
@@ -341,7 +340,6 @@ class POMCP:
         total_reward = self.simulateQ(state, qnode, actionIndex)
         vnode.increaseV(total_reward)
         return total_reward
-        
     
     def get_observation_from_beleif(self, belief):
         for state in belief:
@@ -376,7 +374,8 @@ class POMCP:
             if vnode:
                 delayed_reward += self.simulateV(state, vnode)
             else:
-                delayed_reward += self.rollout(state)
+                rollout_rewad = self.rollout(state)
+                delayed_reward += rollout_rewad
             self.TreeDepth -= 1
         else:
             total_reward += self.get_state_reward(state)
@@ -579,7 +578,7 @@ if __name__ == "__main__":
 
     # POMDP
     U = actions = ['N', 'S', 'E', 'W', 'ST']
-    C = cost = [100000, -1, -1, -1, -1]
+    C = cost = [-1, -1, -1, -1, -1]
 
     transition_prob = [[] for _ in range(len(actions))]
     transition_prob[0] = [0.1, 0.8, 0.1] # S
@@ -595,8 +594,7 @@ if __name__ == "__main__":
     WS_transition[3] = [(-2, -2), (-2, 0), (-2, 2)]    # W
     WS_transition[4] = [(0, 0)]                         # ST
     obstacles = []
-    obstacles = [(1, 3)]
-    # obstacles =  [(3, 5)]
+    # obstacles =  [(1, 5)]
     target = [(17, 17), (17, 19), (19, 17), (19, 19)]
     end_states = set(target)
     state_reward = defaultdict(int)
@@ -610,8 +608,7 @@ if __name__ == "__main__":
             node = (i, j)
             robot_nodes.add(node) 
 
-    # initial_belief_support = [(3,3)]
-    initial_belief_support = [(1,1)]
+    initial_belief_support = [(3,3)]
     initial_belief = {}
     for state in initial_belief_support:
         initial_belief[state] = 1 / len(initial_belief_support)
@@ -653,7 +650,7 @@ if __name__ == "__main__":
         failure_prob_delta[0][tau] = target_failure_prob_delta
 
 
-    max_steps = 1
+    max_steps = 100
     for _ in range(num_episodes):
         pomcp.reset_root()
         state_ground_truth = pomcp.root.sample_state_from_belief()
@@ -665,8 +662,9 @@ if __name__ == "__main__":
         undiscounted_reward = 0
         while cur_time < max_steps and state_ground_truth not in pomcp.pomdp.end_states:
             cur_time += 1
-
-            ACP_step = [[] for _ in range(H+1)]
+            estimations = [[], [], []]
+            ACP_step = pomcp.pomdp.build_restrictive_region(estimations, 1, H)
+            # ACP_step = [[] for _ in range(H+1)]
             obs_mdp, Winning_observation = pomcp.pomdp.online_compute_winning_region(obs_current_node, AccStates, observation_successor_map, H, ACP_step)
             
             actionIndex = pomcp.select_action()
