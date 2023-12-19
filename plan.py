@@ -23,7 +23,6 @@ import copy
 from datetime import datetime
 
 def get_min_distance(state_ground_truth, Y_cur):
-    #TODO
     cx, cy = state_ground_truth
     minD = float("inf")
     for j in range(len(Y_cur) // 2):
@@ -33,14 +32,14 @@ def get_min_distance(state_ground_truth, Y_cur):
     return minD
 
 def plot_gif(figure_path):
-            image_files = sorted([f for f in os.listdir(figure_path) if f.endswith('.jpg')])
-            images = [Image.open(os.path.join(figure_path, f)) for f in image_files]
-            gif_path = figure_path.replace("figures", "gifs")
-            if not os.path.exists(gif_path):
-                os.makedirs(gif_path)
-            imageio.mimsave(gif_path + 'output.gif', images, duration=0.5)  # 设置每帧之间的时间间隔（单位：秒）
+    image_files = sorted([f for f in os.listdir(figure_path) if f.endswith('.jpg')])
+    images = [Image.open(os.path.join(figure_path, f)) for f in image_files]
+    gif_path = figure_path.replace("figures", "gifs")
+    if not os.path.exists(gif_path):
+        os.makedirs(gif_path)
+    imageio.mimsave(gif_path + 'output.gif', images, duration=0.5)  
 
-def plot(state_ground_truth, pomcp, Y_cur, estimation_moving_agents,  H, log_time, i_episode, cur_time, minD):
+def plot_figure(state_ground_truth, pomcp, Y_cur, estimation_moving_agents,  H, log_time, i_episode, cur_time, minD):
     shieldLevel = pomcp.shieldLevel
     fig, ax = plt.subplots()   
     ax.set_aspect('equal')             
@@ -50,9 +49,13 @@ def plot(state_ground_truth, pomcp, Y_cur, estimation_moving_agents,  H, log_tim
     # ax.add_patch(circle)
 
     plt.scatter(state_ground_truth[0], state_ground_truth[1], marker = '*', color = "black")
-    for (x, y) in pomcp.root.belief:
-        plt.scatter(x, y, marker = '*', alpha=0.5, color = "black")
-    
+    for x, y in pomcp.root.belief:
+        plt.scatter(x, y, marker = 'H', alpha=0.5, color = "black")
+    for x, y in pomcp.pomdp.end_states:
+        plt.scatter(x, y, marker = '*', alpha = 1, color = "green")
+    for x, y in pomcp.pomdp.obstacles:
+        plt.scatter(x, y, marker = 's', alpha = 1, color = "red")
+
     cmap = plt.get_cmap('tab10')
     for i in range(0, len(Y_cur), 2):
         plt.scatter(Y_cur[i], Y_cur[i+1], marker = '.', color = cmap(i//2), alpha=1)
@@ -61,15 +64,13 @@ def plot(state_ground_truth, pomcp, Y_cur, estimation_moving_agents,  H, log_tim
         for j in range(0, len(estimation_moving_agents[cur_time][tau]), 2):
             x, y = estimation_moving_agents[cur_time][tau][j], estimation_moving_agents[cur_time][tau][j + 1]
             r = constraints[cur_time + 1][tau]
-            # true_x, true_y = dynamic_agents.loc[cur_time + tau, :].values[j + 1], dynamic_agents.loc[cur_time + tau, :].values[j + 2]
-            # print("radius", x, y, r, true_x, true_y)
             a = (0.5 - 0.2) / (1 - H)
             b = (0.5 * H - 0.2) / (H - 1)
             plt.scatter(x, y, color = cmap(j//2), marker = '.', alpha = a * tau + b)
             circle = patches.Circle((x,y), radius = r, edgecolor=cmap(i//2), facecolor=cmap(j//2), alpha =  a * tau + b)
             ax.add_patch(circle)
     plt.title("Time: {}, Action: {}, MinDistance:{}".format(cur_time, pomcp.pomdp.actions[actionIndex], str(minD)[:3]))
-    figure_path = "./figures/{}/Episode_{}/".format(log_time, i_episode)
+    figure_path = "./figures/{}-ShieldLevel-{}/Episode_{}/".format(log_time, shieldLevel, i_episode)
     if not os.path.exists(figure_path):
         os.makedirs(figure_path)
     plt.savefig(figure_path + "figure_{}.jpg".format(str(cur_time).zfill(3)), dpi=300)
@@ -154,7 +155,6 @@ if __name__ == "__main__":
     starting_col_index = 0 # in the dataframe, where is the starting col of values
     num_agents_tracked = 3
     
-    
     target_failure_prob_delta = 0.1
     acp_learing_gamma = 0.08
     failure_prob_delta = [[0] * (H+1) for _ in range(max_steps + 10)]
@@ -181,7 +181,9 @@ if __name__ == "__main__":
         discounted_reward = 0
         undiscounted_reward = 0
 
-        while cur_time < max_steps and state_ground_truth not in pomcp.pomdp.end_states:
+        done = False
+        while not done and cur_time < max_steps:
+            done = state_ground_truth not in pomcp.pomdp.end_states
             cur_time += 1
 
             # Line 3, 4 TODO preprocessing
@@ -237,7 +239,7 @@ if __name__ == "__main__":
             next_state_ground_truth = pomcp.step(state_ground_truth, actionIndex)
             reward = pomcp.step_reward(state_ground_truth, actionIndex)
             obs_current_node = pomcp.get_observation(next_state_ground_truth)
-            plot(state_ground_truth, pomcp, Y_cur, estimation_moving_agents,  H, log_time, i_episode, cur_time, minD)
+            plot_figure(state_ground_truth, pomcp, Y_cur, estimation_moving_agents,  H, log_time, i_episode, cur_time, minD)
             print("=====step", cur_time, "s", "action", actions[actionIndex], state_ground_truth, "s'", next_state_ground_truth,
                     "observation", obs_current_node, pomcp.root.belief, Y_cur, "undiscounted reward", undiscounted_reward)
             print("+++++",ACP_step,"*****")
@@ -250,6 +252,5 @@ if __name__ == "__main__":
             discounted_reward += pomcp.gamma * reward
             undiscounted_reward += reward
             
-        figure_path = "./figures/{}/Episode_{}/".format(log_time, i_episode)
-        plot_gif(figure_path)
+        plot_gif(figure_path = "./figures/{}/Episode_{}/".format(log_time, i_episode))
         
