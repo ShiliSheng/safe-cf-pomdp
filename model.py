@@ -666,5 +666,9 @@ def obstacle_avoidance():
     #         robot_nodes.add(node)
 
 if __name__ == "__main__":
-    print("??")
+    # print("??")
     test_case1()
+    # git pull
+    # git add model.py
+    # git commit -m "things"
+    # git push
