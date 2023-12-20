@@ -6,6 +6,7 @@ import pickle
 import numpy as np
 import time
 import math
+import copy
 import random
 from model import Model
 from predictor import Predictor
@@ -145,6 +146,8 @@ if __name__ == "__main__":
 
     motion_mdp, AccStates = pomcp.pomdp.compute_accepting_states() 
     observation_successor_map = pomcp.pomdp.compute_H_step_space(motion_mdp, H)
+    observation_state_map_default = copy.deepcopy(pomdp.observation_state_map)
+    state_observation_map_default = copy.deepcopy(pomdp.state_observation_map)
     step = 0
     num_episodes = 1
     max_steps = 200
@@ -251,5 +254,11 @@ if __name__ == "__main__":
 
             discounted_reward += pomcp.gamma * reward
             undiscounted_reward += reward
+
+            #----reset observation-state and state_observation map to default----
+            pomdp.observation_state_map.clear()
+            pomdp.observation_state_map.update(observation_state_map_default)
+            pomdp.state_observation_map.clear()
+            pomdp.state_observation_map.update(state_observation_map_default)
             
         plot_gif(figure_path = "./figures/{}-ShieldLevel-{}/Episode_{}/".format(log_time, shieldLevel, i_episode))
