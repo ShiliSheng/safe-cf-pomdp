@@ -145,7 +145,7 @@ class POMCPNode:
         return state in self.belief
     
 class POMCP:
-    def __init__(self, pomdp, shieldLevel = 0, shieldHorizon = 5, end_states = set(), target = set(),  constant = 2000, maxDepth = 100 ):
+    def __init__(self, pomdp, shieldLevel = 0, shieldHorizon = 5, end_states = set(),  constant = 1000, maxDepth = 100, target = set() ):
 
         # def __init__(self, initial_belief, actions, robot_state_action_map, state_to_observation, state_action_reward_map, 
         #              end_states, constant = 1000, maxDepth = 100, targets = set()):

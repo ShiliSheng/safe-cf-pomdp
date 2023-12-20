@@ -157,19 +157,9 @@ if __name__ == "__main__":
     
     target_failure_prob_delta = 0.1
     acp_learing_gamma = 0.08
-    failure_prob_delta = [[0] * (H+1) for _ in range(max_steps + 10)]
-    error = [[0] * (H+1) for _ in range(max_steps + 10)]
-    constraints = [[0] * (H+1) for _ in range(max_steps + 10)]    
-    estimation_moving_agents = [[0 for _ in range(num_agents_tracked * 2)] * (H+1) for _ in range(max_steps + 10)] 
-    # cf_scores = [[0] * (H+1) for _ in range(max_steps + 10)]
-    cf_scores = defaultdict(lambda: SortedList([float('inf')]))
     safeDistance = 0.5
 
-    for tau in range(1, H + 1):
-        failure_prob_delta[0][tau] = target_failure_prob_delta
-
     for i_episode in range(num_episodes):
-        
         dynamic_agents = prediction_model.create_online_dataset(test_dataset, num_agents_tracked)
 
         pomcp.reset_root()
@@ -181,9 +171,18 @@ if __name__ == "__main__":
         discounted_reward = 0
         undiscounted_reward = 0
 
+        error = [[0] * (H+1) for _ in range(max_steps + 10)]
+        constraints = [[0] * (H+1) for _ in range(max_steps + 10)]    
+        estimation_moving_agents = [[0 for _ in range(num_agents_tracked * 2)] * (H+1) for _ in range(max_steps + 10)] 
+        # cf_scores = [[0] * (H+1) for _ in range(max_steps + 10)]
+        cf_scores = defaultdict(lambda: SortedList([float('inf')]))
+        failure_prob_delta = [[0] * (H+1) for _ in range(max_steps + 10)]
+        for tau in range(1, H + 1):
+            failure_prob_delta[0][tau] = target_failure_prob_delta
+
         done = False
         while not done and cur_time < max_steps:
-            done = state_ground_truth not in pomcp.pomdp.end_states
+            done = state_ground_truth in pomcp.pomdp.end_states
             cur_time += 1
 
             # Line 3, 4 TODO preprocessing
@@ -223,6 +222,7 @@ if __name__ == "__main__":
                 # values.sort()
                 # radius = values[q-1]
                 radius = cf_scores[tau][q - 1]
+                print("____++++", q, len(cf_scores[tau]), cf_scores[tau] )
                 constraints[cur_time + 1][tau] = radius
                 # print("radius", radius, cf_scores[tau], q-1, N)
             # print(constraints[cur_time + 1][tau], "_______________")
@@ -252,5 +252,4 @@ if __name__ == "__main__":
             discounted_reward += pomcp.gamma * reward
             undiscounted_reward += reward
             
-        plot_gif(figure_path = "./figures/{}/Episode_{}/".format(log_time, i_episode))
-        
+        plot_gif(figure_path = "./figures/{}-ShieldLevel-{}/Episode_{}/".format(log_time, shieldLevel, i_episode))

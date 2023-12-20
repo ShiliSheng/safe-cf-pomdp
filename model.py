@@ -207,9 +207,9 @@ class Model:
         f_accept_observation.close()
 
         self.winning_obs = Winning_obs
-        print("+++++++++values the same?")
-        print(state_observation_map_new ==self.state_observation_map)
-        print(observation_state_map_new == self.observation_state_map)
+        # print("+++++++++values the same?")
+        # print(state_observation_map_new ==self.state_observation_map)
+        # print(observation_state_map_new == self.observation_state_map)
         return obs_mdp, Winning_obs, A_valid, observation_state_map_new, state_observation_map_new
 
     def compute_H_step_space(self, motion_mdp, H):
