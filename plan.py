@@ -146,8 +146,8 @@ if __name__ == "__main__":
 
     motion_mdp, AccStates = pomcp.pomdp.compute_accepting_states() 
     observation_successor_map = pomcp.pomdp.compute_H_step_space(motion_mdp, H)
-    observation_state_map_default = copy.deepcopy(pomdp.observation_state_map)
-    state_observation_map_default = copy.deepcopy(pomdp.state_observation_map)
+    # observation_state_map_default = copy.deepcopy(pomdp.observation_state_map)
+    # state_observation_map_default = copy.deepcopy(pomdp.state_observation_map)
     step = 0
     num_episodes = 1
     max_steps = 200
@@ -232,11 +232,11 @@ if __name__ == "__main__":
             ACP_step = defaultdict(list)
             ACP_step = pomdp.build_restrictive_region(estimation_moving_agents[cur_time], constraints[cur_time+1][tau], H, safeDistance)
 
-            state_observation_map_copy = copy.deepcopy(pomcp.pomdp.state_observation_map)    # save state_map
-            observation_state_map_copy = copy.deepcopy(pomcp.pomdp.observation_state_map)    # save state_map
+            # state_observation_map_copy = copy.deepcopy(pomcp.pomdp.state_observation_map)    # save state_map
+            # observation_state_map_copy = copy.deepcopy(pomcp.pomdp.observation_state_map)    # save state_map
 
-            # obs_mdp, Winning_observation, A_valid, observation_state_map_new, state_observation_map_new = 
-            pomcp.pomdp.online_compute_winning_region(obs_current_node, AccStates, observation_successor_map, H, ACP_step, dfa)
+            obs_mdp, Winning_obs, A_valid, observation_state_map_change_record, state_observation_map_change_record  \
+            = pomcp.pomdp.online_compute_winning_region(obs_current_node, AccStates, observation_successor_map, H, ACP_step, dfa)
 
             actionIndex = pomcp.select_action()                                             # compute using generated WR and updated state_map
             next_state_ground_truth = pomcp.step(state_ground_truth, actionIndex)
@@ -249,16 +249,11 @@ if __name__ == "__main__":
             pomcp.update(actionIndex, obs_current_node)
             state_ground_truth = next_state_ground_truth
 
-            pomcp.pomdp.state_observation_map = state_observation_map_copy                # restore state_map
-            pomcp.observation_state_map = observation_state_map_copy                    # restore state_map
-
+            #----reset observation-state and state_observation map to default----
+            pomcp.pomdp.restore_states_from_change(observation_state_map_change_record, state_observation_map_change_record )                    
+            # print(pomcp.pomdp.observation_state_map == pomcp.pomdp.observation_state_map_default )
+            # print(pomcp.pomdp.state_observation_map == pomcp.pomdp.state_observation_map_default )
             discounted_reward += pomcp.gamma * reward
             undiscounted_reward += reward
-
-            #----reset observation-state and state_observation map to default----
-            pomdp.observation_state_map.clear()
-            pomdp.observation_state_map.update(observation_state_map_default)
-            pomdp.state_observation_map.clear()
-            pomdp.state_observation_map.update(state_observation_map_default)
             
         plot_gif(figure_path = "./figures/{}-ShieldLevel-{}/Episode_{}/".format(log_time, shieldLevel, i_episode))
