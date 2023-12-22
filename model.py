@@ -34,6 +34,8 @@ class Model:
         self.init_transition()
         self.end_states = end_states
         self.winning_obs = set()
+        
+        
 
     def set_transition_prob(self, fnode, actionIndex):
         u = self.actions[actionIndex]
@@ -119,6 +121,8 @@ class Model:
         for i in range(H):
             obstacle_new[i+1] = obstacle_static.union(ACP[i+1])
 
+        observation_state_map_change_record = set()
+        state_observation_map_change_record = set()
         #----add time counter----
         SS = dict()
         observation_target = set()
@@ -136,11 +140,15 @@ class Model:
                     o_node_not_obstacle = support_set.difference(SS[oc])
                     for ws_node in SS[oc]:
                         obs_nodes_reachable[(ws_node, oc)] = {frozenset(['obstacle']): 1.0}
+                        observation_state_map_change_record.add(ws_node)
+                        state_observation_map_change_record.add(ws_node)
                         self.observation_state_map[ws_node] = [ws_node]
                         self.state_observation_map[ws_node] = ws_node
                         ws_obstacle = (ws_node, oc)
                         observation_obstacle.add(ws_obstacle)
+
                     if len(o_node_not_obstacle) > 0:
+                        observation_state_map_change_record.add(o_node)
                         self.observation_state_map[o_node] = o_node_not_obstacle
                         if o_node_not_obstacle.issubset(set(AccStates)):
                             obs_nodes_reachable[onode_count] = {frozenset(['target']): 1.0}
@@ -206,7 +214,24 @@ class Model:
         f_accept_observation.close()
 
         self.winning_obs = Winning_obs
-        return obs_mdp, Winning_obs, A_valid
+        return obs_mdp, Winning_obs, A_valid, observation_state_map_change_record, state_observation_map_change_record
+
+    def restore_states_from_change(self, observation_state_map_change_record, state_observation_map_change_record):
+        for key in observation_state_map_change_record:
+            if key in self.observation_state_map_default:
+                self.observation_state_map[key] = self.observation_state_map_default[key]
+            else:
+                self.observation_state_map.pop(key, None)
+        
+        for key in state_observation_map_change_record:
+            if key in self.state_observation_map_default:
+                self.state_observation_map[key] = self.state_observation_map_default[key]
+            else:
+                self.state_observation_map.pop(key, None)
+
+    def restore_states_from_default(self):
+        self.observation_state_map = copy.deepcopy(self.observation_state_map_default)
+        self.state_observation_map = copy.deepcopy(self.state_observation_map_default)
 
     def compute_H_step_space(self, motion_mdp, H):
         #Compute the H-step recahable support belief states, idea: o -> s -> s' -> o'
@@ -254,6 +279,9 @@ class Model:
                             # support_obs.add(o_node)
                             self.state_observation_map[fnode] = o_node
                             break
+        self.observation_state_map_default = copy.deepcopy(self.observation_state_map) #TODO seperate map construct with H-compute
+        self.state_observation_map_default = copy.deepcopy(self.state_observation_map)
+
 
         #----calculate H-step reachable set------------
         observation_successor_map = dict()
@@ -282,6 +310,7 @@ class Model:
                             if ooo_node not in succ_step:
                                 succ_step.add(ooo_node)
                     observation_successor_map[o_node, i] = succ_step
+        
         
         return observation_successor_map
 
