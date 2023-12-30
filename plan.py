@@ -8,7 +8,7 @@ import time
 import math
 import copy
 import random
-from model import Model
+from model import *
 from predictor import Predictor
 from pomcp import POMCP
 from collections import defaultdict
@@ -40,22 +40,29 @@ def plot_gif(figure_path):
         os.makedirs(gif_path)
     imageio.mimsave(gif_path + 'output.gif', images, duration=0.5)  
 
-def plot_figure(state_ground_truth, pomcp, Y_cur, estimation_moving_agents,  H, log_time, i_episode, cur_time, minD):
+def plot_figure(state_ground_truth, pomcp, Y_cur, estimation_moving_agents,  H, log_time, i_episode, cur_time, minD, textinfo):
     shieldLevel = pomcp.shieldLevel
     fig, ax = plt.subplots()   
     ax.set_aspect('equal')             
-    plt.xlim(0, 22)
-    plt.ylim(0, 22)
+    plt.xlim(-0.5, 22)
+    plt.ylim(-0.5, 22)
     # circle = patches.Circle(state_ground_truth, radius=0.5, edgecolor='black', facecolor='none')
     # ax.add_patch(circle)
-
-    plt.scatter(state_ground_truth[0], state_ground_truth[1], marker = '*', color = "black")
+    plt.scatter(state_ground_truth[0], state_ground_truth[1], marker = 'o', color = "black")
+    width = 1
+    height = 1
     for x, y in pomcp.root.belief:
-        plt.scatter(x, y, marker = 'H', alpha=0.5, color = "black")
+        rect = plt.Rectangle((x - 0.5, y - 0.5), width, height, facecolor= "blue", alpha = 0.5)
+        ax.add_patch(rect)
+        # plt.scatter(x, y, marker = 'H', alpha=0.5, color = "black")
     for x, y in pomcp.pomdp.end_states:
-        plt.scatter(x, y, marker = '*', alpha = 1, color = "green")
+        rect = plt.Rectangle((x - 0.5, y - 0.5), width, height, facecolor= "green", alpha = 1)
+        ax.add_patch(rect)
+        # plt.scatter(x, y, marker = '*', alpha = 1, color = "green")
     for x, y in pomcp.pomdp.obstacles:
-        plt.scatter(x, y, marker = 's', alpha = 1, color = "red")
+        rect = plt.Rectangle((x - 0.5, y - 0.5), width, height, facecolor= "red", alpha = 1)
+        ax.add_patch(rect)
+        # plt.scatter(x, y, marker = 's', alpha = 1, color = "red")
 
     cmap = plt.get_cmap('tab10')
     for i in range(0, len(Y_cur), 2):
@@ -74,11 +81,15 @@ def plot_figure(state_ground_truth, pomcp, Y_cur, estimation_moving_agents,  H, 
     figure_path = "./figures/{}-ShieldLevel-{}/Episode_{}/".format(log_time, shieldLevel, i_episode)
     if not os.path.exists(figure_path):
         os.makedirs(figure_path)
+    plt.text(0, 6, textinfo)
     plt.savefig(figure_path + "figure_{}.jpg".format(str(cur_time).zfill(3)), dpi=300)
     plt.close()
 
 if __name__ == "__main__":
     log_time = f"{datetime.now().strftime('%Y-%m-%d_%H-%M')}"
+    max_steps = 100
+    explore_constant = 1000
+    shieldLevel = 1
 
     #Settings for LSTM trajectory prediction
     prediction_model = Predictor()
@@ -87,70 +98,16 @@ if __name__ == "__main__":
     H = prediction_length = prediction_model.prediction_length
 
     # POMDP
-    U = actions = ['N', 'S', 'E', 'W', 'ST']
-    C = cost = [-1, -1, -1, -1, -1]
+    pomdp = create_scenario_obstacle()
 
-    transition_prob = [[] for _ in range(len(actions))]
-    transition_prob[0] = [0.1, 0.8, 0.1] # S
-    transition_prob[1] = [0.1, 0.8, 0.1] # N
-    transition_prob[2] = [0.1, 0.8, 0.1] # E
-    transition_prob[3] = [0.1, 0.8, 0.1] # W
-    transition_prob[4] = [1]             # ST
-
-    WS_transition = [[] for _ in range(len(actions))]
-    WS_transition[0] = [(-2, 2), (0, 2), (2, 2)]       # S
-    WS_transition[1] = [(-2, -2), (0, -2), (2, -2)]    # N
-    WS_transition[2] = [(2, -2), (2, 0), (2, 2)]       # E
-    WS_transition[3] = [(-2, -2), (-2, 0), (-2, 2)]    # W
-    WS_transition[4] = [(0, 0)]                         # ST
-
-    obstacles =  [(3, 7)]
-    target = [(17, 17), (17, 19), (19, 17), (19, 19)]
-    end_states = set(target)
-    state_reward = defaultdict(int)
-    for state in target:
-        state_reward[state] = 1000
-
-    robot_nodes = set()
-    for i in range(1, 20, 2):
-        for j in range(1, 20, 2):
-            node = (i, j)
-            robot_nodes.add(node) 
-
-    initial_belief_support = [(1,1), (1,3)]
-    initial_belief = {}
-    for state in initial_belief_support:
-        initial_belief[state] = 1 / len(initial_belief_support)
-
-    pomdp = Model(robot_nodes, actions, cost, WS_transition, transition_prob,
-                     initial_belief, obstacles, target, end_states, state_reward)
-
-    #----compute DFA----
-    #reach_avoid = '! obstacle U target'
-    statenum = 3
-    init = 1 
-    edges = {(1, 1): ['00'], 
-            (1, 2): ['01' '11'], 
-            (1, 3): ['10'], 
-            (2, 2): ['00', '01', '10', '11'],
-            (3, 3): ['00', '01', '10', '11'], 
-            }
-    aps = ['obstacle', 'target']
-    acc = [[{2}]]
-    dfa = Dfa(statenum, init, edges, aps, acc)
-    print('DFA done.')
-
-    #----
-    shieldLevel = 1
-    pomcp = POMCP(pomdp, shieldLevel, prediction_model.prediction_length, end_states)
+    
+    pomcp = POMCP(pomdp, shieldLevel, prediction_model.prediction_length, explore_constant)
 
     motion_mdp, AccStates = pomcp.pomdp.compute_accepting_states() 
-    observation_successor_map = pomcp.pomdp.compute_H_step_space(motion_mdp, H)
-    # observation_state_map_default = copy.deepcopy(pomdp.observation_state_map)
-    # state_observation_map_default = copy.deepcopy(pomdp.state_observation_map)
+    # pomcp.pomdp.set_states_observations(motion_mdp)
+    observation_successor_map = pomcp.pomdp.compute_H_step_space(H)
     step = 0
     num_episodes = 1
-    max_steps = 200
 
     # Settings for conformal prediction
     path = "./OpenTraj/datasets/ETH/seq_eth/"
@@ -164,12 +121,9 @@ if __name__ == "__main__":
 
     for i_episode in range(num_episodes):
         dynamic_agents = prediction_model.create_online_dataset(test_dataset, num_agents_tracked)
-
         pomcp.reset_root()
         state_ground_truth = pomcp.root.sample_state_from_belief()
         print(state_ground_truth, "current state")
-        obs_current_node = pomcp.get_observation(state_ground_truth)
-        print("current observation", obs_current_node)
         cur_time = -1
         discounted_reward = 0
         undiscounted_reward = 0
@@ -235,18 +189,24 @@ if __name__ == "__main__":
             # state_observation_map_copy = copy.deepcopy(pomcp.pomdp.state_observation_map)    # save state_map
             # observation_state_map_copy = copy.deepcopy(pomcp.pomdp.observation_state_map)    # save state_map
 
+            obs_current_node = pomcp.get_observation(state_ground_truth)
+
             obs_mdp, Winning_obs, A_valid, observation_state_map_change_record, state_observation_map_change_record  \
-            = pomcp.pomdp.online_compute_winning_region(obs_current_node, AccStates, observation_successor_map, H, ACP_step, dfa)
+            = pomcp.pomdp.online_compute_winning_region(obs_current_node, AccStates, observation_successor_map, H, ACP_step)
 
             actionIndex = pomcp.select_action()                                             # compute using generated WR and updated state_map
             next_state_ground_truth = pomcp.step(state_ground_truth, actionIndex)
             reward = pomcp.step_reward(state_ground_truth, actionIndex)
-            obs_current_node = pomcp.get_observation(next_state_ground_truth)
-            plot_figure(state_ground_truth, pomcp, Y_cur, estimation_moving_agents,  H, log_time, i_episode, cur_time, minD)
-            print("=====step", cur_time, "s", "action", actions[actionIndex], state_ground_truth, "s'", next_state_ground_truth,
-                    "observation", obs_current_node, pomcp.root.belief, Y_cur, "undiscounted reward", undiscounted_reward)
+            textinfo = str(pomcp.root.illegalActionIndexes)
+            plot_figure(state_ground_truth, pomcp, Y_cur, estimation_moving_agents,  H, log_time, i_episode, cur_time, minD, textinfo)
+            print("=====step", cur_time, "s", state_ground_truth, "action", pomcp.pomdp.actions[actionIndex],  "s'", next_state_ground_truth,
+                    "observation", obs_current_node, pomcp.root.belief, Y_cur, "undiscounted reward", undiscounted_reward, pomcp.pomdp.obstacles,
+                    pomcp.R_max, pomcp.R_min,)
+            
             print("+++++",ACP_step,"*****")
-            pomcp.update(actionIndex, obs_current_node)
+
+            obs_nxt_node = pomcp.get_observation(next_state_ground_truth)
+            pomcp.update(actionIndex, obs_nxt_node)
             state_ground_truth = next_state_ground_truth
 
             #----reset observation-state and state_observation map to default----
