@@ -145,7 +145,7 @@ class POMCPNode:
         return state in self.belief
     
 class POMCP:
-    def __init__(self, pomdp, shieldLevel = 0, shieldHorizon = 5, end_states = set(),  constant = 1000, maxDepth = 100, target = set() ):
+    def __init__(self, pomdp, shieldLevel = 0, shieldHorizon = 5,  constant = 10, maxDepth = 100 ):
 
         # def __init__(self, initial_belief, actions, robot_state_action_map, state_to_observation, state_action_reward_map, 
         #              end_states, constant = 1000, maxDepth = 100, targets = set()):
@@ -153,7 +153,7 @@ class POMCP:
         # c (float): Parameter that controls the importance of exploration in the UCB heuristic. Default value is 1.
         # no_particles (int): Controls the maximum number of particles that will be kept at each node 
         #                       and the number of particles that will be sampled from the posterior belief after an action is taken.
-        self.numSimulations = 2 ** 10
+        self.numSimulations = 2 ** 13
         self.gamma = 0.95
         self.e = 0.05
         self.noParticles = 1200
@@ -164,8 +164,8 @@ class POMCP:
         self.maxDepth = maxDepth
         self.verbose = 1
         self.pomdp = pomdp
-        self.target = target
-        self.end_states = end_states
+        self.target = pomdp.targets
+        self.end_states = pomdp.end_states
 
         self.root = None
         self.is_min = False
@@ -179,6 +179,9 @@ class POMCP:
         self.shieldLevel = shieldLevel
         self.horizon = shieldHorizon
         self.initializePOMCP()
+        self.R_max = float("-inf")
+        self.R_min = float("inf")
+        
 
     def initializePOMCP(self):
         self.TreeDepth = 0
@@ -198,7 +201,7 @@ class POMCP:
             for n in range(UCB_n):
                 if n == 0: self.UCB[N][n] = float("inf")
                 else: self.UCB[N][n] = math.log(N + 1) / n
-    
+
     def set_num_simulations(self, n):
         self.num_simulations = n
 
@@ -215,6 +218,8 @@ class POMCP:
         # for state, state_fre in self.root.belief.items():
         #     for _ in range(state_fre):
         #         self.root.belief_particles.append(state)
+        self.R_max = float("-inf")
+        self.R_min = float("inf")
 
     def draw_from_probabilities(self, probabilities):
         states, probs = zip(*probabilities.items())
@@ -302,6 +307,9 @@ class POMCP:
             self.TreeDepth = 0
             self.PeakTreeDepth = 0
             reward = self.simulateV(state, self.root)
+            self.R_max = max(self.R_max, reward)
+            self.R_min = min(self.R_min, reward)
+
             if (self.verbose >= 2):
                 print("==MCTS after num simulation", n)
         for actionIndex in self.root.children:
@@ -463,6 +471,8 @@ class POMCP:
         return self.pomdp.state_reward[state]
     
     def get_random_action_index(self, state): # to be improved
+        if self.pomdp.preferred_actions:
+            return random.choice(self.pomdp.preferred_actions)
         available_action_index = self.pomdp.robot_state_action_map[state].keys()
         return random.choice(list(available_action_index))
     
@@ -620,6 +630,7 @@ if __name__ == "__main__":
     pomcp = POMCP(pomdp, shieldLevel, prediction_model.prediction_length, end_states)
 
     motion_mdp, AccStates = pomcp.pomdp.compute_accepting_states() 
+    pomcp.pomdp.set_states_observations(motion_mdp)
     observation_successor_map = pomcp.pomdp.compute_H_step_space(motion_mdp, H)
     step = 0
 
@@ -655,7 +666,7 @@ if __name__ == "__main__":
         pomcp.reset_root()
         state_ground_truth = pomcp.root.sample_state_from_belief()
         print(state_ground_truth, "current state")
-        obs_current_node = pomcp.get_observation(state_ground_truth)
+        # obs_current_node = pomcp.get_observation(state_ground_truth)
         print("current observation", obs_current_node)
         cur_time = -1
         discounted_reward = 0
@@ -665,12 +676,13 @@ if __name__ == "__main__":
             estimations = [[], [], []]
             ACP_step = pomcp.pomdp.build_restrictive_region(estimations, 1, H)
             # ACP_step = [[] for _ in range(H+1)]
+
+            obs_current_node = pomcp.get_observation(state_ground_truth)
             obs_mdp, Winning_observation = pomcp.pomdp.online_compute_winning_region(obs_current_node, AccStates, observation_successor_map, H, ACP_step)
             
             actionIndex = pomcp.select_action()
             next_state_ground_truth = pomcp.step(state_ground_truth, actionIndex)
             reward = pomcp.step_reward(state_ground_truth, actionIndex)
-            obs_current_node = pomcp.get_observation(next_state_ground_truth)
 
             fig, ax = plt.subplots()                
             plt.xlim(0, 22)
