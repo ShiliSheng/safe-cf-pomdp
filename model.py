@@ -14,131 +14,81 @@ import copy
 # def print(*args, **kwargs):
 #     return
 class Model:
-    def __init__(self, robot_nodes, actions, cost, transition, transiton_prob, initial_belief,
-                 obstacles = [], target = [], end_states = set(), state_reward = {}):
-        self.t0 = time.time()
+    def __init__(self, robot_nodes, actions, robot_edges, cost, initial_belief,
+                 obstacles = [], targets = [], end_states = set(), state_reward = {}, preferred_actions = []):
         self.robot_nodes = robot_nodes # set of states
         self.actions = actions
+        self.robot_edges = robot_edges
         self.cost = cost
-        self.transiton = transition
-        self.transition_prob = transiton_prob
+
+        self.motion_mdp = Motion_MDP(self.robot_nodes, self.robot_edges, self.actions)
+        self.derive_state_transion_map_from_mdp()
+
         self.initial_belief_support = list(initial_belief.keys())
         self.initial_belief = initial_belief
         self.obstacles = obstacles
-        self.target = target
-        self.state_tra = [{} for _ in range(len(self.actions))]
-        self.robot_edges = dict()
-        self.robot_state_action_map = dict()        # (state, actionIndex) : {next_state, prob}
-        self.state_action_reward_map = dict()       # (state, actionIndex) : (cost)
-        self.state_reward = state_reward
+        self.targets = targets
         self.end_states = end_states
-        self.winning_obs = set()
+        self.state_reward = state_reward
+        self.preferred_actions = preferred_actions
+
+        # will be set later for pomdp
         self.state_observation_map = defaultdict(tuple)
         self.observation_state_map = defaultdict(list)
+
+        # will be computed online
+        self.winning_obs = set() 
+
+    def derive_state_transion_map_from_mdp(self):
+        # self.robot_state_action_map = robot_state_action_map       # (state, actionIndex) : {next_state: prob}
+        # self.state_action_reward_map = state_action_reward_map       # (state, actionIndex) : cost
+        robot_state_action_map = defaultdict(dict)
+        state_action_reward_map = defaultdict(dict)
+        action_to_index = {action: actionIndex for actionIndex, action in enumerate(self.actions)}
+        for fnode in self.motion_mdp.nodes():
+            # if (fnode != (8, 0)): continue
+            for tnode in self.motion_mdp.successors(fnode):
+                record = self.motion_mdp[fnode][tnode]['prop']
+                # print(fnode, record)
+                for actionTuple, (prob, cost) in record.items():
+                    action = "".join(actionTuple)
+                    actionIndex = action_to_index[action]
+                    succ_prop = {tnode: prob}
+                    if actionIndex not in robot_state_action_map[fnode]: robot_state_action_map[fnode][actionIndex] = {} 
+                    robot_state_action_map[fnode][actionIndex].update(succ_prop)
+                    state_action_reward_map[fnode][actionIndex] = cost
+                # print(fnode, tnode,record)
+
+        for fnode in robot_state_action_map:
+            for actionIndex in range(len(self.actions)):
+                if actionIndex not in robot_state_action_map[fnode]:
+                    robot_state_action_map[fnode][actionIndex] = {fnode:1}
+        for fnode in state_action_reward_map:
+            for actionIndex in range(len(self.actions)):
+                if actionIndex not in state_action_reward_map[fnode]:
+                    state_action_reward_map[fnode][actionIndex] = self.cost[actionIndex]
+
+        self.robot_state_action_map = robot_state_action_map
+        self.state_action_reward_map = state_action_reward_map
         
-    def set_transition_prob(self):
-        for fnode in self.robot_nodes: 
-            for actionIndex, action in enumerate(self.actions):
-                u = self.actions[actionIndex]
-                c = self.cost[actionIndex]
-                cumulative_prob = 0
-                succ_set = dict()
-                n_next_positions = len(self.transiton[actionIndex])
-                for i in range(n_next_positions):
-                    dx, dy = self.transiton[actionIndex][i]
-                    prob = self.transition_prob[actionIndex][i]
-                    tnode = (fnode[0] + dx, fnode[1] + dy)
-                    if tnode in self.robot_nodes:
-                        cumulative_prob += prob
-                        self.robot_edges[(fnode, u, tnode)] = (prob, c)
-                        succ_prop = {tnode: prob}
-                        succ_set.update(succ_prop)
-                if not succ_set:     # if no successor, stay the same state
-                    succ_set[fnode] = 1
-                else:                # make prob sum to 1
-                    for tnode in succ_set:
-                        succ_set[tnode] += (1 - cumulative_prob) / len(succ_set)
-                if fnode not in self.state_action_reward_map: self.state_action_reward_map[fnode] = {}
-                self.state_action_reward_map[fnode][actionIndex] = c
-                if fnode not in self.robot_state_action_map: self.robot_state_action_map[fnode] = {}
-                self.robot_state_action_map[fnode][actionIndex] = succ_set
-                self.state_tra[actionIndex][fnode] = succ_set
-
-    # def set_states_observations(self, motion_mdp): 
-    #     self.obs_nodes = set()
-    #     for i in range(2, 20, 4):
-    #         for j in range(2, 20, 4):
-    #             onode = (i, j)
-    #             self.obs_nodes.add(onode)
-
-    #     for obs in self.obstacles:
-    #         self.obs_nodes.add(obs)
-
-    #     #----
-    #     self.observation_state_map = dict()
-    #     for o_node in self.obs_nodes:
-    #         if o_node in self.obstacles:
-    #             self.observation_state_map[o_node] = [o_node]
-    #         else:
-    #             ox = o_node[0]
-    #             oy = o_node[1]
-    #             support = set()
-    #             for fnode in motion_mdp.nodes():
-    #                 if fnode not in self.obstacles: 
-    #                     fx = fnode[0]
-    #                     fy = fnode[1]    
-    #                     if (abs(fx-ox) <= 2) and (abs(fy-oy) <= 2):
-    #                         state = fnode
-    #                         support.add(state)
-    #             self.observation_state_map[o_node] = support
-
-    #     #----
-    #     self.state_observation_map = dict()
-    #     for fnode in motion_mdp.nodes(): 
-    #         if fnode in self.obstacles:
-    #             self.state_observation_map[fnode] = fnode
-    #         else:
-    #             fx = fnode[0]
-    #             fy = fnode[1] 
-    #             # support_obs = set()  
-    #             for o_node in self.obs_nodes:
-    #                 if o_node not in self.obstacles:
-    #                     ox = o_node[0]
-    #                     oy = o_node[1]  
-    #                     if (abs(fx-ox) <= 2) and (abs(fy-oy) <= 2):
-    #                         # support_obs.add(o_node)
-    #                         self.state_observation_map[fnode] = o_node
-    #                         break
-    
     def set_states_observations_with_predefined(self, state_observation_map, observation_state_map, obs_nodes):
         self.state_observation_map = state_observation_map
         self.observation_state_map = observation_state_map
         self.obs_nodes = obs_nodes
+        self.save_states()
 
     def save_states(self):
-        self.observation_state_map_default = copy.deepcopy(self.observation_state_map) #TODO seperate map construct with H-compute
+        self.observation_state_map_default = copy.deepcopy(self.observation_state_map) 
         self.state_observation_map_default = copy.deepcopy(self.state_observation_map)
-
-    def display_state_transiton(self):
-        print("++++++++++ state transition")
-        for state in self.robot_state_action_map:
-            for actionIndex in self.robot_state_action_map[state]:
-                u = self.actions[actionIndex]
-                print(state, u, self.robot_state_action_map[state][actionIndex])
-        print("++++++++++")
-        for actionIndex, u in enumerate(self.actions):
-            for state in self.state_tra[actionIndex]:
-                print(state, u, self.state_tra[actionIndex][state])
 
     def compute_accepting_states(self):
         #compute safe space with respect to static enviornment
-        motion_mdp = Motion_MDP(self.robot_nodes, self.robot_edges, self.actions)
-
+        motion_mdp = self.motion_mdp
         self.successor_mdp = dict()
         for node in motion_mdp.nodes():
             self.successor_mdp[node]= motion_mdp.successors(node)
 
-        Sf = compute_accept_states(motion_mdp, self.obstacles, self.target)
+        Sf = compute_accept_states(motion_mdp, self.obstacles, self.targets)
         AccStates = []
         for S_fi in Sf[0]:
             for MEC in S_fi:
@@ -167,7 +117,7 @@ class Model:
         obstacle_new = dict()
         for i in range(H):
             obstacle_new[i+1] = obstacle_static.union(ACP[i+1])
-
+        print( "-------", obstacle_new,)
         observation_state_map_change_record = set()
         state_observation_map_change_record = set()
         #----add time counter----
@@ -263,23 +213,6 @@ class Model:
         self.winning_obs = Winning_obs
         return obs_mdp, Winning_obs, A_valid, observation_state_map_change_record, state_observation_map_change_record
 
-    def restore_states_from_change(self, observation_state_map_change_record, state_observation_map_change_record):
-        for key in observation_state_map_change_record:
-            if key in self.observation_state_map_default:
-                self.observation_state_map[key] = self.observation_state_map_default[key]
-            else:
-                self.observation_state_map.pop(key, None)
-        
-        for key in state_observation_map_change_record:
-            if key in self.state_observation_map_default:
-                self.state_observation_map[key] = self.state_observation_map_default[key]
-            else:
-                self.state_observation_map.pop(key, None)
-
-    def restore_states_from_default(self):
-        self.observation_state_map = copy.deepcopy(self.observation_state_map_default)
-        self.state_observation_map = copy.deepcopy(self.state_observation_map_default)
-
     def compute_H_step_space(self, H):
         #Compute the H-step recahable support belief states, idea: o -> s -> s' -> o'
         motion_mdp = self.motion_mdp
@@ -311,6 +244,100 @@ class Model:
                                 succ_step.add(ooo_node)
                     observation_successor_map[o_node, i] = succ_step
         return observation_successor_map
+
+    def restore_states_from_change(self, observation_state_map_change_record, state_observation_map_change_record):
+        for key in observation_state_map_change_record:
+            if key in self.observation_state_map_default:
+                self.observation_state_map[key] = self.observation_state_map_default[key]
+            else:
+                self.observation_state_map.pop(key, None)
+        
+        for key in state_observation_map_change_record:
+            if key in self.state_observation_map_default:
+                self.state_observation_map[key] = self.state_observation_map_default[key]
+            else:
+                self.state_observation_map.pop(key, None)
+
+    def restore_states_from_default(self):
+        self.observation_state_map = copy.deepcopy(self.observation_state_map_default)
+        self.state_observation_map = copy.deepcopy(self.state_observation_map_default)
+
+    def write_transitons(self):
+        file = open('data/state_trainsiton.dat','w')
+        for state in self.robot_state_action_map:
+            for actionIndex in self.robot_state_action_map[state]:
+                u = self.actions[actionIndex]
+                file.write('%s,%s,%s\n'%(state, u, self.state_tra[actionIndex][state]))
+
+    def write_state_observation(self):
+        file = open('data/state_observation.dat','w')
+        for state, obs in self.state_observation_map.items():
+            file.write('%s,%s\n' %(state, obs))
+        file.close()
+
+    def write_observation_state(self):
+        file = open('data/observation_state.dat','w')
+        for obs, states in self.observation_state_map.items():
+            file.write('%s,%s\n' %(obs, states))
+        file.close()
+   
+    def find_next_states(self, state):
+        queue = collections.deque([state])
+        visited = set([state])
+        while queue:
+            print(queue, "n")
+            for _ in range(len(queue)):
+                s = queue.popleft()
+                for actionIndex in self.robot_state_action_map[s]:
+                    for nxt in self.robot_state_action_map[s][actionIndex]:
+                        if nxt in visited: continue
+                        queue.append(nxt)
+                        visited.add(nxt)
+        
+    def build_restrictive_region(self, estimations, radius, H, safeDistance = 0):
+        radius += safeDistance
+        ACP = defaultdict(list)
+        dx = 1
+        dy = 1
+        for tau in range(1, H + 1):
+            for i in range(len(estimations[tau]) // 2):
+                x, y = estimations[tau][i], estimations[tau][i+1]
+                lx, rx = math.floor(x - radius), math.ceil(x + radius)
+                by, uy = math.floor(y - radius), math.ceil(y + radius)
+                for nx in np.arange(lx, rx, dx):
+                    for ny in np.arange(by, uy, dy):
+                        if (nx, ny) in self.robot_state_action_map and (nx-x)**2 + (ny-y)** 2 < radius ** 2:
+                            ACP[tau].append((nx, ny))
+        return ACP
+
+
+    # def set_transition_prob(self):
+        for fnode in self.robot_nodes: 
+            for actionIndex, action in enumerate(self.actions):
+                u = self.actions[actionIndex]
+                c = self.cost[actionIndex]
+                cumulative_prob = 0
+                succ_set = dict()
+                n_next_positions = len(self.transiton[actionIndex])
+                for i in range(n_next_positions):
+                    dx, dy = self.transiton[actionIndex][i]
+                    prob = self.transition_prob[actionIndex][i]
+                    tnode = (fnode[0] + dx, fnode[1] + dy)
+                    if tnode in self.robot_nodes:
+                        cumulative_prob += prob
+                        self.robot_edges[(fnode, u, tnode)] = (prob, c)
+                        succ_prop = {tnode: prob}
+                        succ_set.update(succ_prop)
+                if not succ_set:     # if no successor, stay the same state
+                    succ_set[fnode] = 1
+                else:                # make prob sum to 1
+                    for tnode in succ_set:
+                        succ_set[tnode] += (1 - cumulative_prob) / len(succ_set)
+                if fnode not in self.state_action_reward_map: self.state_action_reward_map[fnode] = {}
+                self.state_action_reward_map[fnode][actionIndex] = c
+                if fnode not in self.robot_state_action_map: self.robot_state_action_map[fnode] = {}
+                self.robot_state_action_map[fnode][actionIndex] = succ_set
+                self.state_tra[actionIndex][fnode] = succ_set
 
     # def compute_H_step_space(self, motion_mdp, H):
     #     #Compute the H-step recahable support belief states, idea: o -> s -> s' -> o'
@@ -344,67 +371,52 @@ class Model:
     #                 observation_successor_map[o_node, i] = succ_step
     #     return observation_successor_map
 
-    def write_transitons(self):
-        file = open('data/state_trainsiton.dat','w')
-        for state in self.robot_state_action_map:
-            for actionIndex in self.robot_state_action_map[state]:
-                u = self.actions[actionIndex]
-                file.write('%s,%s,%s\n'%(state, u, self.state_tra[actionIndex][state]))
+    # def set_states_observations(self, motion_mdp): 
+    #     self.obs_nodes = set()
+    #     for i in range(2, 20, 4):
+    #         for j in range(2, 20, 4):
+    #             onode = (i, j)
+    #             self.obs_nodes.add(onode)
 
-        file = open('data/state_observation.dat','w')
-        for state, obs in self.state_observation_map.items():
-            file.write('%s,%s\n'%(state, obs))
+    #     for obs in self.obstacles:
+    #         self.obs_nodes.add(obs)
 
-    def write_state_observation(self):
-        file = open('data/state_observation.dat','w')
-        for state, obs in self.state_observation_map.items():
-            file.write('%s,%s\n' %(state, obs))
-        file.close()
+    #     #----
+    #     self.observation_state_map = dict()
+    #     for o_node in self.obs_nodes:
+    #         if o_node in self.obstacles:
+    #             self.observation_state_map[o_node] = [o_node]
+    #         else:
+    #             ox = o_node[0]
+    #             oy = o_node[1]
+    #             support = set()
+    #             for fnode in motion_mdp.nodes():
+    #                 if fnode not in self.obstacles: 
+    #                     fx = fnode[0]
+    #                     fy = fnode[1]    
+    #                     if (abs(fx-ox) <= 2) and (abs(fy-oy) <= 2):
+    #                         state = fnode
+    #                         support.add(state)
+    #             self.observation_state_map[o_node] = support
 
-    def write_observation_state(self):
-        file = open('data/observation_state.dat','w')
-        for obs, states in self.observation_state_map.items():
-            file.write('%s,%s\n' %(obs, states))
-        file.close()
-   
-    def display_observation_state(self):
-        for obs, states in self.observation_state_map.items():
-            print("obs=", obs, "states = ", states)
-
-    def display_state_observation(self):
-        for state, obs in self.state_observation_map.items():
-            print("state", state, "obs = ", obs)
-
-    def find_next_states(self, state):
-        queue = collections.deque([state])
-        visited = set([state])
-        while queue:
-            print(queue, "n")
-            for _ in range(len(queue)):
-                s = queue.popleft()
-                for actionIndex in self.robot_state_action_map[s]:
-                    for nxt in self.robot_state_action_map[s][actionIndex]:
-                        if nxt in visited: continue
-                        queue.append(nxt)
-                        visited.add(nxt)
-        
-    def build_restrictive_region(self, estimations, radius, H, safeDistance = 0):
-        radius += safeDistance
-        ACP = defaultdict(list)
-        dx = 1
-        dy = 1
-        for tau in range(1, H + 1):
-            for i in range(len(estimations[tau]) // 2):
-                x, y = estimations[tau][i], estimations[tau][i+1]
-                lx, rx = math.floor(x - radius), math.ceil(x + radius)
-                by, uy = math.floor(y - radius), math.ceil(y + radius)
-                for nx in np.arange(lx, rx, dx):
-                    for ny in np.arange(by, uy, dy):
-                        if (nx, ny) in self.robot_state_action_map and (nx-x)**2 + (ny-y)** 2 < radius ** 2:
-                            ACP[tau].append((nx, ny))
-        return ACP
-
-
+    #     #----
+    #     self.state_observation_map = dict()
+    #     for fnode in motion_mdp.nodes(): 
+    #         if fnode in self.obstacles:
+    #             self.state_observation_map[fnode] = fnode
+    #         else:
+    #             fx = fnode[0]
+    #             fy = fnode[1] 
+    #             # support_obs = set()  
+    #             for o_node in self.obs_nodes:
+    #                 if o_node not in self.obstacles:
+    #                     ox = o_node[0]
+    #                     oy = o_node[1]  
+    #                     if (abs(fx-ox) <= 2) and (abs(fy-oy) <= 2):
+    #                         # support_obs.add(o_node)
+    #                         self.state_observation_map[fnode] = o_node
+    #                         break
+    
 def compute_dfa():
     #----compute DFA----
     #reach_avoid = '! obstacle U target'
@@ -690,21 +702,8 @@ def test_case1():
 #     #     print("ke ",key, val)
 #     print(pomdp.target)
 
-def creat_scenario_obstacle():
-    # ------- action
-    U = actions = ['N', 'S', 'E', 'W', 'ST']
-    
-    slippery_prob = 0.2
-    transition_prob = [[slippery_prob, 1 - slippery_prob]   for _ in range(len(actions))]
-    WS_transition = [[] for _ in range(len(actions))]
-
-    WS_transition[0] = [(0, 2), (0, 1)]       # S
-    WS_transition[1] = [(0, -2), (0, -1)]     # N
-    WS_transition[2] = [(2, 0), (1, 0)]       # E
-    WS_transition[3] = [(-2, 0), (-1, 0)]     # W
-    transition_prob[4] = [1]                            # ST
-    WS_transition[4] = [(0, 0)]                         # ST
-
+def create_scenario_obstacle():
+    # ------- states
     minX, minY = float("inf"), float("inf")
     maxX, maxY = float("-inf"), float("-inf")
     robot_nodes = set()
@@ -729,21 +728,46 @@ def creat_scenario_obstacle():
         if obstacle not in targets: 
             obstacles.add(obstacle)
 
+    # ------- action transition
+    U = actions = ['N', 'S', 'E', 'W', 'ST']
+    C = cost = [-1, -1, -1, -1, -3]
+    preferred_actions = [0, 2]
+    slippery_prob = 0.2
+    transition_prob = [[slippery_prob, 1 - slippery_prob]   for _ in range(len(actions))]
+    WS_transition = [[] for _ in range(len(actions))]
+
+    WS_transition[0] = [(0, 2), (0, 1)]       # S
+    WS_transition[1] = [(0, -2), (0, -1)]     # N
+    WS_transition[2] = [(2, 0), (1, 0)]       # E
+    WS_transition[3] = [(-2, 0), (-1, 0)]     # W
+    transition_prob[4] = [1]                            # ST
+    WS_transition[4] = [(0, 0)]                         # ST
+
+    robot_edges = dict()
+    for fnode in robot_nodes: 
+        for actionIndex, action in enumerate(actions):
+            u = actions[actionIndex]
+            c = cost[actionIndex]
+            n_next_positions = len(WS_transition[actionIndex])
+            for i in range(n_next_positions):
+                dx, dy = WS_transition[actionIndex][i]
+                prob = transition_prob[actionIndex][i]
+                tnode = (fnode[0] + dx, fnode[1] + dy)
+                if tnode in robot_nodes:
+                    robot_edges[(fnode, u, tnode)] = (prob, c)
+
     initial_belief_support = [(minX,minY)]
-    initial_belief_support = [(10,10)]
+    initial_belief_support = [(0, 0)]
     initial_belief = {}
     for state in initial_belief_support:
         initial_belief[state] = 1 / len(initial_belief_support)   
 
-    # ------- state award
-    C = cost = [-1, -1, -1, -1, -100]
     state_reward = defaultdict(int)
     for state in targets:
         state_reward[state] = 10000
 
-    pomdp = Model(robot_nodes, actions, cost, WS_transition, transition_prob,
-                    initial_belief, obstacles, targets, end_states, state_reward)
-    pomdp.set_transition_prob()
+    pomdp = Model(robot_nodes, actions, robot_edges, cost,
+                    initial_belief, obstacles, targets, end_states, state_reward, preferred_actions)
     motion_mdp, AccStates = pomdp.compute_accepting_states()
 
     # set state-observation
@@ -767,34 +791,151 @@ def creat_scenario_obstacle():
     return pomdp
 
 def test_ostacle():
-    pomdp = creat_scenario_obstacle()
+    pomdp = create_scenario_obstacle()
     H = 3
     motion_mdp, AccStates = pomdp.compute_accepting_states()
     observation_successor_map = pomdp.compute_H_step_space(H)
     obs_current_node = pomdp.state_observation_map[pomdp.initial_belief_support[0]]
 
     ACP_step = defaultdict(list)
-    ACP_step[1] =  [(5, 5), (5, 9)]
-    ACP_step[2] =  [(5, 5), (5, 9)]
-    ACP_step[3] =  [(5, 5), (5, 9)]
-
+    # ACP_step[1] =  [(5, 5), (5, 9)]
+    # ACP_step[2] =  [(5, 5), (5, 9)]
+    # ACP_step[3] =  [(5, 5), (5, 9)]
     dfa = compute_dfa()  
     obs_mdp, Winning_obs, A_valid, observation_state_map_change_record, state_observation_map_change_record  \
              = pomdp.online_compute_winning_region(obs_current_node, AccStates, observation_successor_map, H, ACP_step, dfa)
     print(Winning_obs)
-    pomdp.display_state_observation()
-    pomdp.display_observation_state()
     print(pomdp.obstacles)
-    # for key, val in pomdp.robot_state_action_map.items():
-    #     print("ke ",key, val)
-    print(pomdp.target)
+    print(pomdp.targets)
     print(pomdp.state_reward)
+    for obstacle in pomdp.obstacles:
+        for i in range(1, H+1):
+            if ((obstacle), i ) in Winning_obs:
+                print("error static obstacle in Winning Region", (obstacle, i))
+    
+    for i in range(1, H+1):
+        for obstacle in ACP_step[i]:
+            if ((obstacle), i ) in Winning_obs:
+                print("error dynamic obstacle in Winning Region", (obstacle, i))
+    
+    pomdp.write_state_observation()
+
+def create_scenario_refuel():
+    U = actions = ['N', 'S', 'E', 'W', 'ST', "Refuel"]
+    preferred_actions = [0, 2]
+    slippery_prob = 0.2
+
+    transition_prob = [[slippery_prob, 1 - slippery_prob] for _ in range(len(actions))]
+    WS_transition = [[] for _ in range(len(actions))]
+    WS_transition[0] = [(0, 2, -1), (0, 1, -1)]       # S
+    WS_transition[1] = [(0, -2, -1), (0, -1, -1)]     # N
+    WS_transition[2] = [(2, 0, -1), (1, 0, -1)]       # E
+    WS_transition[3] = [(-2, 0, -1), (-1, 0, -1)]     # W
+    transition_prob[4] = [1]                            # ST
+    WS_transition[4] = [(0, 0, -1)]                         # ST
+
+    minX, minY = float("inf"), float("inf")
+    maxX, maxY = float("-inf"), float("-inf")
+    robot_nodes = set()
+    locations = []
+    max_energy = 9
+    for i in range(0, 20, 1):
+        for j in range(0, 20, 1):
+            for energy in range(0, max_energy, 1):
+                node = (i, j, energy)
+                robot_nodes.add(node) 
+                locations.append((i, j))
+                minX = min(minX, i)
+                minY = min(minY, j)
+                maxX = max(maxX, i)
+                maxY = max(maxY, j)
+
+    for energy in range(max_energy):
+        targets = set([(maxX, maxY, energy)])
+        end_states = set([(maxX, maxY, energy)])
+
+    obstacles = set()
+    random.seed(42)
+    n_obstacles = 0
+    while (len(obstacles) < n_obstacles):
+        obstacle = random.choice(locations)
+        if obstacle not in targets: 
+            obstacles.add(obstacle)
+
+    stations = set()
+    random.seed(42)
+    n_stations = 5
+    while (len(stations) < n_stations):
+        station = random.choice(locations)
+        if station not in targets: 
+            stations.add(station)
+
+    robot_edges = {} # TODO
+    for i, j, energy in robot_nodes:
+        for action_index, action in enumerate(actions):
+            if action != "Refuel":
+                if energy == 0:
+                    nxt_state = {(i, j, 0): 1}
+                elif action_index == 0:
+                    nxt_state = {(i, j + 2, energy - 1):slippery_prob, (i, j + 1, energy - 1): (1-slippery_prob)}
+                elif action_index == 1:
+                    nxt_state = {(i, j - 2, energy - 1):slippery_prob, (i, j - 1, energy - 1): (1-slippery_prob)}
+                elif action_index == 2:
+                    nxt_state = {(i + 2, j, energy - 1):slippery_prob, (i + 1, j, energy - 1): (1-slippery_prob)}
+                elif action_index == 3:
+                    nxt_state = {(i - 2, j, energy - 1):slippery_prob, (i - 1, j, energy - 1): (1-slippery_prob)}
+                elif action_index == 4:
+                    nxt_state = {(i, j, energy - 1):slippery_prob, (i, j, energy - 1): (1-slippery_prob)}
+            else:
+                if (i, j) in stations:
+                    nxt_state = {(i, j, max_energy): 1}
+                else:
+                    nxt_state = {(i, j, max(energy - 1, 0)): 1}
+
+    initial_belief_support = [(minX, minY, max_energy)]
+    initial_belief = {}
+    for state in initial_belief_support:
+        initial_belief[state] = 1 / len(initial_belief_support)   
+
+    # # ------- state award
+    C = cost = [-1, -1, -1, -1, -3, -1]
+    state_reward = defaultdict(int)
+    for state in targets:
+        state_reward[state] = 10000
+
+    # TODO
+    pomdp = Model(robot_nodes, actions, robot_edges,  cost, 
+                    initial_belief, obstacles, targets, end_states, state_reward, preferred_actions)
+    pomdp.set_transition_prob() 
+    motion_mdp, AccStates = pomdp.compute_accepting_states()
+
+    # # set state-observation
+    # TODO
+    state_observation_map = dict()
+    for fx, fy, energy in motion_mdp.nodes(): 
+        if (fx, fy) in obstacles or (fx, fy) in targets:
+            state_observation_map[(fx, fy)] = (fx, fy, energy // 2)
+        elif (fx == 0 or fy == 0 or fx == maxX or fy == maxY):
+            state_observation_map[(fx, fy)] = (fx, fy, energy // 2)
+        else:
+            state_observation_map[(fx, fy)] = (fx//4, fy//4, energy // 2)
+
+    # define obversation-states
+    observation_state_map = {}
+    for state, obs in state_observation_map.items():
+        if obs not in observation_state_map: observation_state_map[obs] = []
+        observation_state_map[obs].append(state)
+    
+    obs_nodes = set(key for key in observation_state_map)
+
+    pomdp.set_states_observations_with_predefined(state_observation_map, observation_state_map, obs_nodes)
+    pomdp.save_states()
+    return pomdp
+
+def create_scenario_rock():
+    pass
 
 if __name__ == "__main__":
     test_ostacle()
     # obstacle_avoidance()
     pass
-    # git pull
-    # git add model.py
-    # git commit -m "things"
-    # git push
