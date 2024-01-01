@@ -92,15 +92,17 @@ if __name__ == "__main__":
     shieldLevel = 1
 
     #Settings for LSTM trajectory prediction
-    prediction_model = Predictor()
-    prediction_model.load_model('./OpenTraj/datasets/ETH/seq_eth/model_weights.pth')
+    history_length = 4
+    prediction_length = 2
+    prediction_model = Predictor(history_length, prediction_length)
+    trained_model_path = './OpenTraj/datasets/ETH/seq_eth/' + 'model_weights.pth'
+    prediction_model.load_model()
     history_length = prediction_model.history_length
     H = prediction_length = prediction_model.prediction_length
 
     # POMDP
     pomdp = create_scenario_obstacle()
 
-    
     pomcp = POMCP(pomdp, shieldLevel, prediction_model.prediction_length, explore_constant)
 
     motion_mdp, AccStates = pomcp.pomdp.compute_accepting_states() 
