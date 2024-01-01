@@ -12,6 +12,8 @@ import pickle
 import time
 from itertools import chain
 import random
+from datetime import datetime
+
 class LSTMModel(nn.Module):
     def __init__(self, input_size, hidden_size, output_size):
         super(LSTMModel, self).__init__()
@@ -24,13 +26,13 @@ class LSTMModel(nn.Module):
         return output
 
 class Predictor():
-    def __init__(self) -> None:
+    def __init__(self, history_length, prediction_length, training_epochs = 50) -> None:
         self.input_size = 2  # Assuming 2 features (x, y) per timestep
         self.hidden_size = 64
         self.output_size = 2  # Assuming 2 features in the output
-        self.history_length = 4
-        self.prediction_length = 2
-
+        self.history_length = history_length
+        self.prediction_length = prediction_length
+        self.num_epochs = training_epochs
     def create_test_dataset(self, df, test_data_file, subgroup_id):
         new_df = pd.DataFrame()
         total_length = 300
@@ -194,7 +196,7 @@ class Predictor():
         # Define loss function and optimizer
         criterion = nn.MSELoss()
         optimizer = optim.Adam(model.parameters(), lr=0.001)
-        num_epochs = 30
+        num_epochs = self.num_epochs
         # Assuming 'train_loader' is your DataLoader
         for epoch in range(num_epochs):
             for batch_input, batch_target in train_loader:
@@ -233,7 +235,7 @@ class Predictor():
         for batch_input, batch_target in validation_dataset:
             # batch_input: batch_size * history_length * feature_size
             # batch_target: batch_size * prediction_length * feature_size
-            print(batch_input, batch_target)
+            # print(batch_input, batch_target)
             with torch.no_grad():  # Disable gradient computation during evaluation
                 batch_input, batch_target = batch_input.to(self.device), batch_target.to(self.device)
                 output = self.model(batch_input) # batch_size * (prediction_length * feature_size)
@@ -243,7 +245,6 @@ class Predictor():
         average_mse = total_mse / num_batches
         print(f"Average Mean Squared Error (MSE) on the validation set: {average_mse}")
 
-
     def load_model(self, model_file):
         # Create an instance of the model
         # history_length = 0, prediction_legnth = 0, input_size = 0)
@@ -251,7 +252,7 @@ class Predictor():
         self.input_size = loaded_model['input_size']
         self.hidden_size = loaded_model['hidden_size']
         self.output_size  = loaded_model['output_size']
-        self.prediction_length = loaded_model['output_size']
+        self.prediction_length = loaded_model['prediction_length']
         self.history_length = loaded_model['history_length']
         self.model = LSTMModel(self.input_size, self.hidden_size, self.output_size * self.prediction_length)
         self.model.load_state_dict(loaded_model['state_dict'])
@@ -317,23 +318,28 @@ class Predictor():
         # distance = np.linalg.norm(A - B)
         # print("distance",distance)
         return cf_distance
-    
 
 if __name__ == "__main__":
+    log_time = f"{datetime.now().strftime('%Y-%m-%d_%H-%M')}"
     path = './OpenTraj/datasets/ETH/seq_eth/'
     raw_file =  path + 'obsmat.txt'
-    lstm_model = path + 'model_weights.pth'
     train_data_file = path + 'train_dataset.pickle'
     validation_data_file = path + 'test_dataset.pickle'
     test_data_file = path + "test_dynammic_agents"
 
-    prediction_model = Predictor()
-    prediction_model.preprocess(raw_file, train_data_file, validation_data_file, test_data_file)
-    
-    # pred.train(train_data_file, lstm_model)
-    # pred.validation(validation_data_file, lstm_model)
+    history_length = 4
+    prediction_length = 4
+    for prediction_length in range(2, 5):
+        lstm_model = path + 'model_weights-{}-{}'.format(history_length, prediction_length) + "_" + log_time + '.pth'
+        prediction_model = Predictor(history_length, prediction_length)
+        prediction_model.preprocess(raw_file, train_data_file, validation_data_file, test_data_file)
+        prediction_model.train(train_data_file, lstm_model)
+        saved_model = lstm_model
 
-    # prediction_model.load_model(lstm_model)
+        # saved_model = 'OpenTraj/datasets/ETH/seq_eth/model_weights-4-3_2024-01-01_09-39.pth'
+        prediction_model.validation(validation_data_file, saved_model)
+
+    # prediction_model.load_model(saved_mode)
     # H = prediction_model.prediction_length
     # dynamic_agents =  pd.read_csv(test_data_file + "_1.csv", index_col=0)
     # num_agents_tracked = len(dynamic_agents.columns) // 2 
