@@ -122,7 +122,7 @@ class Model:
         obstacle_new = dict()
         for i in range(H):
             obstacle_new[i+1] = obstacle_static.union(ACP[i+1])
-        print( "-------", obstacle_new,)
+        print( "------- obstacle_new", obstacle_new,)
         observation_state_map_change_record = set()
         state_observation_map_change_record = set()
         #----add time counter----
@@ -136,6 +136,8 @@ class Model:
         for oc in range(1, H+1):
             for o_node in self.obs_nodes:
                 onode_count = (o_node, oc)
+                if (onode_count == (4,2)):
+                    print(onode_count)
                 support_set = set(self.observation_state_map[o_node])
                 SS[oc] = support_set.intersection(obstacle_new[oc])
                 if len(SS[oc]) > 0:
@@ -773,10 +775,10 @@ def create_scenario_obstacle():
         if (fx, fy) in obstacles or (fx, fy) in targets:
             state_observation_map[(fx, fy)] = (fx, fy)
         else:
-            state_observation_map[(fx, fy)] = (fx//4, fy//4)
+            state_observation_map[(fx, fy)] = (fx//4 + targetX * targetY, fy//4 + targetX * targetY)
     
     # set state->obs, obs->state, obs()
-    pomdp.set_states_observations_with_predefined(state_observation_map, )
+    pomdp.set_states_observations_with_predefined(state_observation_map )
 
     return pomdp
 
@@ -875,7 +877,7 @@ def create_scenario_refuel():
         elif (fx == 0 or fy == 0 or fx == targetX or fy == targetY):
             state_observation_map[(fx, fy)] = (fx, fy, energy // 2)
         else:
-            state_observation_map[(fx, fy)] = (fx//4, fy//4, energy // 2)
+            state_observation_map[(fx, fy)] = (fx//4 + targetX * targetY, fy//4 + targetX * targetY, energy // 2)
 
     pomdp.set_states_observations_with_predefined(state_observation_map)
     return pomdp
@@ -1007,7 +1009,7 @@ def create_scenario_rock():
         x, y = fnode[0], fnode[1]
         tp = list(fnode)
         if fnode not in rocks:
-            tp[0], tp[1] = x // 4, y // 4
+            tp[0], tp[1] = x // 4 + targetX * targetY, y // 4 + targetX * targetY
         else:
             tp[0], tp[1] = x, y
         for rock in range(n_rocks):
@@ -1020,15 +1022,17 @@ def create_scenario_rock():
         state_observation_map[fnode] = tuple(tp)
 
     # how to define bad states TODO
+    return pomdp
 
 def test_scenario():
     # pomdp = create_scenario_refuel()
-    pomdp = create_scenario_obstacle()
-    # pomdp = create_scenario_rock()
+    # pomdp = create_scenario_obstacle()
+    pomdp = create_scenario_rock()
     pomdp.write_model()
     H = 3
     motion_mdp, AccStates = pomdp.compute_accepting_states()
     observation_successor_map = pomdp.compute_H_step_space(H)
+
     obs_current_node = pomdp.state_observation_map[pomdp.initial_belief_support[0]]
 
     ACP_step = defaultdict(list)
@@ -1038,13 +1042,15 @@ def test_scenario():
     dfa = compute_dfa()  
     obs_mdp, Winning_obs, A_valid, observation_state_map_change_record, state_observation_map_change_record  \
              = pomdp.online_compute_winning_region(obs_current_node, AccStates, observation_successor_map, H, ACP_step, dfa)
+    
     print(Winning_obs)
-    print(pomdp.obstacles)
+    print("obstacle states", pomdp.obstacles)
     print(pomdp.targets)
     print(pomdp.state_reward)
     for obstacle in pomdp.obstacles:
         for i in range(1, H+1):
-            if ((obstacle), i ) in Winning_obs:
+            obs_obstacle = pomdp.state_observation_map[obstacle]
+            if ((obs_obstacle), i ) in Winning_obs:
                 print("error static obstacle in Winning Region", (obstacle, i))
     
     for i in range(1, H+1):
@@ -1053,8 +1059,8 @@ def test_scenario():
                 print("error dynamic obstacle in Winning Region", (obstacle, i))
 
 if __name__ == "__main__":
-    # test_scenario()
+    test_scenario()
     # create_scenario_obstacle()
-    create_scenario_refuel()
+    # create_scenario_refuel()
     # create_scenario_rock()
     pass
