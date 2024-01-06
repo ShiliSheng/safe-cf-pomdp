@@ -26,13 +26,14 @@ class LSTMModel(nn.Module):
         return output
 
 class Predictor():
-    def __init__(self, history_length, prediction_length, training_epochs = 50) -> None:
+    def __init__(self, history_length, prediction_length, training_epochs = 100) -> None:
         self.input_size = 2  # Assuming 2 features (x, y) per timestep
         self.hidden_size = 64
         self.output_size = 2  # Assuming 2 features in the output
         self.history_length = history_length
         self.prediction_length = prediction_length
         self.num_epochs = training_epochs
+
     def create_test_dataset(self, df, test_data_file, subgroup_id):
         new_df = pd.DataFrame()
         total_length = 300
@@ -110,7 +111,7 @@ class Predictor():
         raw_dataset["id"] = raw_dataset["id"].astype(int)
 
         # print("preprocessed",raw_dataset.id.nunique())
-        # print(raw_dataset.x.min(), raw_dataset.x.max(), raw_dataset.y.min(), raw_dataset.y.max())
+        print("xmin","xmax",raw_dataset.x.min(), raw_dataset.x.max(), raw_dataset.y.min(), raw_dataset.y.max())
 
         train_id, test_id = train_test_split(raw_dataset.id.unique(), test_size= 1 / 10, random_state=42)
         train_id, validation_id = train_test_split(train_id, test_size = 0.2, random_state = 42)
@@ -121,7 +122,7 @@ class Predictor():
         validation_raw_dataset = raw_dataset[raw_dataset.id.isin(validation_id)]
         test_raw_datasete = raw_dataset[raw_dataset.id.isin(test_id)]
 
-        print("len", len(train_id), len(validation_id), len(test_id))
+        print("size of training, validation, test", len(train_id), len(validation_id), len(test_id))
         self.create_test_dataset(test_raw_datasete, test_data_file, 0)
         # random_seed = 42
         # random.seed(random_seed)
