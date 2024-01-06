@@ -307,11 +307,11 @@ class Predictor():
         ACP = [()] * horizon
         return ACP
 
-    def compute_prediction_error(self, A, B):
-        N = len(A) // 2
+    def compute_prediction_error(self, truth, prediction):
+        N = len(truth) // 2
         cf_distance = 0
         for i in range(0, N):
-            distance = ((A[i * 2] - B[i* 2]) ** 2 + (A[2 * i + 1] - B[2 * i + 1]) ** 2) ** (0.5)
+            distance = ((truth[i * 2] - prediction[i* 2]) ** 2 + (truth[2 * i + 1] - prediction[2 * i + 1]) ** 2) ** (0.5)
             # cf_distance += distance
             cf_distance = max(cf_distance, distance)
             # distance += abs(A[i] - B[i]) + abs(A[i+1] - B[i+1])
@@ -320,6 +320,17 @@ class Predictor():
         # print("distance",distance)
         return cf_distance
 
+    def compute_prediction_error_by_feature(self, truth, prediction):
+        N = len(truth) // 2
+        cf_distance_x = 0
+        cf_distance_y = 0
+        for i in range(0, N):
+            distance_x = abs(truth[i * 2] - prediction[i* 2]) 
+            distance_y = abs(truth[i * 2 + 1] - prediction[i* 2] + 1) 
+            cf_distance_x = max(cf_distance_x, distance_x)
+            cf_distance_y = max(cf_distance_y, distance_y)
+        return cf_distance_x, cf_distance_y
+    
 if __name__ == "__main__":
     log_time = f"{datetime.now().strftime('%Y-%m-%d_%H-%M')}"
     path = './OpenTraj/datasets/ETH/seq_eth/'
