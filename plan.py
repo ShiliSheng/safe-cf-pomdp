@@ -8,7 +8,8 @@ import time
 import math
 import copy
 import random
-from model import *
+from model import create_scenario_obstacle
+from model import Model
 from predictor import Predictor
 from pomcp import POMCP
 from collections import defaultdict
@@ -94,9 +95,10 @@ if __name__ == "__main__":
     #Settings for LSTM trajectory prediction
     history_length = 4
     prediction_length = 2
-    prediction_model = Predictor(history_length, prediction_length)
     trained_model_path = './OpenTraj/datasets/ETH/seq_eth/' + 'model_weights.pth'
-    prediction_model.load_model()
+
+    prediction_model = Predictor(history_length, prediction_length)
+    prediction_model.load_model(trained_model_path)
     history_length = prediction_model.history_length
     H = prediction_length = prediction_model.prediction_length
 
@@ -118,7 +120,7 @@ if __name__ == "__main__":
     num_agents_tracked = 3
     
     target_failure_prob_delta = 0.1
-    acp_learing_gamma = 0.08
+    acp_learing_gamma = 0.2
     safeDistance = 0.5
 
     for i_episode in range(num_episodes):
@@ -134,7 +136,8 @@ if __name__ == "__main__":
         constraints = [[0] * (H+1) for _ in range(max_steps + 10)]    
         estimation_moving_agents = [[0 for _ in range(num_agents_tracked * 2)] * (H+1) for _ in range(max_steps + 10)] 
         # cf_scores = [[0] * (H+1) for _ in range(max_steps + 10)]
-        cf_scores = defaultdict(lambda: SortedList([float('inf')]))
+        # cf_scores = defaultdict(lambda: SortedList([float('inf')]))
+        cf_scores = defaultdict(SortedList)
         failure_prob_delta = [[0] * (H+1) for _ in range(max_steps + 10)]
         for tau in range(1, H + 1):
             failure_prob_delta[0][tau] = target_failure_prob_delta
@@ -173,15 +176,26 @@ if __name__ == "__main__":
 
                 # Line 8
                 # N = (cur_time + 1 - tau)
-                N = len(cf_scores[tau]) - 1
-                q = math.ceil(N * (1 - failure_prob_delta[cur_time+1][tau]))
 
+                # N = len(cf_scores[tau]) - 1 # TODO not include inf, simple add N = len() needs to be double-checked
+                # q = math.ceil(N * (1 - failure_prob_delta[cur_time+1][tau]))
+                # q_index = q - 1
+
+
+                N = len(cf_scores[tau])
+                q = math.ceil((N+1) * (1 - failure_prob_delta[cur_time+1][tau]))
+
+                # q_level = q / N
+                if q > N:
+                    radius = 1 + 0.1 * tau
+                else:
+                    radius = cf_scores[tau][q - 1] # 0-indexed
                 # Line 9
                 # values = [cf_scores[k][tau] for k in range(tau, cur_time+1)] + [float("inf")]
                 # values.sort()
                 # radius = values[q-1]
-                radius = cf_scores[tau][q - 1]
-                print("____++++", q, len(cf_scores[tau]), cf_scores[tau] )
+                print("____++++", radius, q, "N", N, "qlevel",len(cf_scores[tau]),  failure_prob_delta[cur_time + 1][tau], error[cur_time][tau], cf_scores[tau] )
+
                 constraints[cur_time + 1][tau] = radius
                 # print("radius", radius, cf_scores[tau], q-1, N)
             # print(constraints[cur_time + 1][tau], "_______________")
