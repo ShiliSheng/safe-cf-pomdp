@@ -93,9 +93,10 @@ if __name__ == "__main__":
     shieldLevel = 1
 
     #Settings for LSTM trajectory prediction
-    history_length = 4
-    prediction_length = 2
-    trained_model_path = './OpenTraj/datasets/ETH/seq_eth/' + 'model_weights.pth'
+
+    history_length, prediction_length, model_file = 4, 3, 'model_weights-4-3_2024-01-02_11-50.pth'
+    #  = + 'model_weights.pth'
+    trained_model_path = './OpenTraj/datasets/ETH/seq_eth/' + model_file
 
     prediction_model = Predictor(history_length, prediction_length)
     prediction_model.load_model(trained_model_path)
@@ -176,11 +177,9 @@ if __name__ == "__main__":
 
                 # Line 8
                 # N = (cur_time + 1 - tau)
-
                 # N = len(cf_scores[tau]) - 1 # TODO not include inf, simple add N = len() needs to be double-checked
                 # q = math.ceil(N * (1 - failure_prob_delta[cur_time+1][tau]))
                 # q_index = q - 1
-
 
                 N = len(cf_scores[tau])
                 q = math.ceil((N+1) * (1 - failure_prob_delta[cur_time+1][tau]))
@@ -199,8 +198,10 @@ if __name__ == "__main__":
                 constraints[cur_time + 1][tau] = radius
                 # print("radius", radius, cf_scores[tau], q-1, N)
             # print(constraints[cur_time + 1][tau], "_______________")
+            if q > N: continue
+             
             ACP_step = defaultdict(list)
-            ACP_step = pomdp.build_restrictive_region(estimation_moving_agents[cur_time], constraints[cur_time+1][tau], H, safeDistance)
+            ACP_step = pomdp.build_restrictive_region(estimation_moving_agents[cur_time], constraints[cur_time+1], H, safeDistance)
 
             # state_observation_map_copy = copy.deepcopy(pomcp.pomdp.state_observation_map)    # save state_map
             # observation_state_map_copy = copy.deepcopy(pomcp.pomdp.observation_state_map)    # save state_map
