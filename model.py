@@ -23,7 +23,6 @@ class Model:
 
         self.motion_mdp = Motion_MDP(self.robot_nodes, self.robot_edges, self.actions)
         self.derive_state_transion_map_from_mdp()
-
         self.initial_belief_support = list(initial_belief.keys())
         self.initial_belief = initial_belief
         self.obstacles = obstacles
@@ -94,6 +93,7 @@ class Model:
             self.successor_mdp[node]= motion_mdp.successors(node)
 
         Sf = compute_accept_states(motion_mdp, self.obstacles, self.targets)
+        print("Sf------------")
         AccStates = []
         for S_fi in Sf[0]:
             for MEC in S_fi:
@@ -136,8 +136,6 @@ class Model:
         for oc in range(1, H+1):
             for o_node in self.obs_nodes:
                 onode_count = (o_node, oc)
-                if (onode_count == (4,2)):
-                    print(onode_count)
                 support_set = set(self.observation_state_map[o_node])
                 SS[oc] = support_set.intersection(obstacle_new[oc])
                 if len(SS[oc]) > 0:
@@ -299,14 +297,14 @@ class Model:
                         queue.append(nxt)
                         visited.add(nxt)
         
-    def build_restrictive_region(self, estimations, radius, H, safeDistance = 0):
-        radius += safeDistance
+    def build_restrictive_region(self, estimations, radius_set, H, safeDistance = 0):
         ACP = defaultdict(list)
         dx = 1
         dy = 1
         for tau in range(1, H + 1):
+            radius = radius_set[tau] + safeDistance
             for i in range(len(estimations[tau]) // 2):
-                x, y = estimations[tau][i], estimations[tau][i+1]
+                x, y = estimations[tau][2 * i], estimations[tau][2 * i+1]
                 lx, rx = math.floor(x - radius), math.ceil(x + radius)
                 by, uy = math.floor(y - radius), math.ceil(y + radius)
                 for nx in np.arange(lx, rx, dx):
@@ -771,7 +769,7 @@ def create_scenario_obstacle():
 
     # set state-observation
     state_observation_map = dict()
-    for fx, fy in motion_mdp.nodes(): 
+    for fx, fy in motion_mdp.nodes():
         if (fx, fy) in obstacles or (fx, fy) in targets:
             state_observation_map[(fx, fy)] = (fx, fy)
         else:
@@ -789,7 +787,7 @@ def create_scenario_refuel():
     preferred_actions = [0, 2]
     slippery_prob = 0.2
 
-    max_energy = 9
+    max_energy = 50
 
     robot_nodes = set()
     locations = []
@@ -802,12 +800,13 @@ def create_scenario_refuel():
             for energy in range(max_energy + 1):
                 node = (i, j, energy)
                 robot_nodes.add(node)
-    targets = set([(targetX, targetY)])
-    end_states = set([(targetX, targetY)])
+    targets = set()
+    end_states = set()
 
     for energy in range(max_energy + 1):
-        targets = set([(targetX, targetY, energy)])
-        end_states = set([(targetX, targetY, energy)])
+        state = (targetX, targetY, 0)
+        targets.add(state)
+        end_states.add(state)
 
     obstacles = set()
     random.seed(42)
@@ -853,6 +852,7 @@ def create_scenario_refuel():
                 robot_edges[(fnode, action, tnode)] = (prob, action_cost)
 
     initial_belief_support = [(startX, startY, max_energy)]
+    initial_belief_support = [(19, 20, max_energy)]
     initial_belief = {}
     for state in initial_belief_support:
         initial_belief[state] = 1 / len(initial_belief_support)   
@@ -866,6 +866,7 @@ def create_scenario_refuel():
     pomdp = Model(robot_nodes, actions, robot_edges,  cost, 
                     initial_belief, targets, end_states, state_reward, preferred_actions, obstacles)
 
+    pomdp.write_model()
     motion_mdp, AccStates = pomdp.compute_accepting_states()
 
     # # set state-observation
@@ -873,11 +874,11 @@ def create_scenario_refuel():
     state_observation_map = dict()
     for fx, fy, energy in motion_mdp.nodes(): 
         if (fx, fy) in obstacles or (fx, fy) in targets:
-            state_observation_map[(fx, fy)] = (fx, fy, energy // 2)
+            state_observation_map[(fx, fy, energy)] = (fx, fy, energy // 2)
         elif (fx == 0 or fy == 0 or fx == targetX or fy == targetY):
-            state_observation_map[(fx, fy)] = (fx, fy, energy // 2)
+            state_observation_map[(fx, fy, energy)] = (fx, fy, energy // 2)
         else:
-            state_observation_map[(fx, fy)] = (fx//4 + targetX * targetY, fy//4 + targetX * targetY, energy // 2)
+            state_observation_map[(fx, fy, energy)] = (fx//4 + targetX * targetY, fy//4 + targetX * targetY, energy // 2)
 
     pomdp.set_states_observations_with_predefined(state_observation_map)
     return pomdp
@@ -924,7 +925,7 @@ def create_scenario_rock():
     
     slippery_prob = 0.1
     robot_edges = {}
-    print(robot_nodes)
+    # print(robot_nodes)
     for fnode in robot_nodes:
         for action_index, action in enumerate(actions):
             tp = list(fnode)
@@ -1025,9 +1026,9 @@ def create_scenario_rock():
     return pomdp
 
 def test_scenario():
-    # pomdp = create_scenario_refuel()
+    pomdp = create_scenario_refuel()
     # pomdp = create_scenario_obstacle()
-    pomdp = create_scenario_rock()
+    # pomdp = create_scenario_rock()
     pomdp.write_model()
     H = 3
     motion_mdp, AccStates = pomdp.compute_accepting_states()
@@ -1042,16 +1043,23 @@ def test_scenario():
     dfa = compute_dfa()  
     obs_mdp, Winning_obs, A_valid, observation_state_map_change_record, state_observation_map_change_record  \
              = pomdp.online_compute_winning_region(obs_current_node, AccStates, observation_successor_map, H, ACP_step, dfa)
-    
+    print("+++++++++ Winning Obs")
     print(Winning_obs)
     print("obstacle states", pomdp.obstacles)
     print(pomdp.targets)
     print(pomdp.state_reward)
     for obstacle in pomdp.obstacles:
         for i in range(1, H+1):
-            obs_obstacle = pomdp.state_observation_map[obstacle]
+            obs_obstacle = pomdp.state_observation_map.get(obstacle, (-1, -1))
             if ((obs_obstacle), i ) in Winning_obs:
                 print("error static obstacle in Winning Region", (obstacle, i))
+
+    for obstacle in pomdp.obstacles:
+        for i in range(1, H+1):
+            for energy in range(10):
+                obs_obstacle = pomdp.state_observation_map.get(obstacle, (-1, -1, -1))
+                if ((obs_obstacle), i ) in Winning_obs:
+                    print("error static obstacle in Winning Region", (obstacle, i))
     
     for i in range(1, H+1):
         for obstacle in ACP_step[i]:
@@ -1059,8 +1067,10 @@ def test_scenario():
                 print("error dynamic obstacle in Winning Region", (obstacle, i))
 
 if __name__ == "__main__":
-    test_scenario()
-    # create_scenario_obstacle()
+    # test_scenario()
+    pomdp = create_scenario_obstacle()
+    pomdp.write_model()
+    print(pomdp.obstacles)
     # create_scenario_refuel()
     # create_scenario_rock()
     pass
