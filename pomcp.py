@@ -162,7 +162,7 @@ class POMCP:
         self.PeakTreeDepth = 0
         self.c = constant
         self.maxDepth = maxDepth
-        self.verbose = 1
+        self.verbose = 0
         self.pomdp = pomdp
         self.target = pomdp.targets
         self.end_states = pomdp.end_states
@@ -546,6 +546,8 @@ class POMCP:
         if besta:
             return random.choice(besta)
         else:
+            if not action_index_candidates:
+                return -1
             actionIndex = random.choice(action_index_candidates)
             qParent = vnode.parent
             vParent = qParent.parent
