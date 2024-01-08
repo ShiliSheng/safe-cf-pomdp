@@ -312,12 +312,17 @@ class Predictor():
         cf_distance = 0
         for i in range(0, N):
             distance = ((truth[i * 2] - prediction[i* 2]) ** 2 + (truth[2 * i + 1] - prediction[2 * i + 1]) ** 2) ** (0.5)
-            # cf_distance += distance
             cf_distance = max(cf_distance, distance)
-            # distance += abs(A[i] - B[i]) + abs(A[i+1] - B[i+1])
-        # cf_distance /= N
-        # distance = np.linalg.norm(A - B)
-        # print("distance",distance)
+        return cf_distance
+
+    def compute_prediction_error_abs(self, truth, prediction):
+        N = len(truth) // 2
+        cf_distance = 0
+        for i in range(0, N):
+            distance_x = abs(truth[i * 2] - prediction[i* 2]) 
+            distance_y = abs(truth[i * 2 + 1] - prediction[i* 2] + 1) 
+            cf_distance = max(cf_distance, distance_x)
+            cf_distance = max(cf_distance, distance_y)
         return cf_distance
 
     def compute_prediction_error_by_feature(self, truth, prediction):
