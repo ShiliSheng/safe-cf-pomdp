@@ -15,7 +15,8 @@ import copy
 #     return
 class Model:
     def __init__(self, robot_nodes, actions, robot_edges, cost, initial_belief,
-                targets = [], end_states = set(), state_reward = {}, preferred_actions = [], obstacles = []):
+                targets = [], end_states = set(), state_reward = {}, preferred_actions = [], 
+                obstacles = [], refule_stations = set(),  rocks = set(), unsafe_states = set()):
         self.robot_nodes = robot_nodes # set of states
         self.actions = actions
         self.robot_edges = robot_edges
@@ -25,11 +26,16 @@ class Model:
         self.derive_state_transion_map_from_mdp()
         self.initial_belief_support = list(initial_belief.keys())
         self.initial_belief = initial_belief
-        self.obstacles = obstacles
+        
         self.targets = targets
         self.end_states = end_states
         self.state_reward = state_reward
         self.preferred_actions = preferred_actions
+
+        self.obstacles = obstacles  
+        self.refule_stations = refule_stations
+        self.rocks = rocks # [(x, y)] 
+        self.unsafe_states = unsafe_states
 
         # will be set later for pomdp
         self.state_observation_map = defaultdict(tuple)
@@ -93,6 +99,8 @@ class Model:
             self.successor_mdp[node]= motion_mdp.successors(node)
 
         Sf = compute_accept_states(motion_mdp, self.obstacles, self.targets)
+        # prob 1 to reach target and avoid obstacles
+
         print("Sf------------")
         AccStates = []
         for S_fi in Sf[0]:
@@ -706,7 +714,8 @@ def create_scenario_base():
 #     #     print("ke ",key, val)
 #     print(pomdp.target)
 
-def create_scenario_obstacle():
+def create_scenario_obstacle(random_seed = 42):
+    random.seed(random_seed)
     # ------- states
     startX, startY = 0, 0
     targetX, targetY = 20, 20
@@ -720,7 +729,7 @@ def create_scenario_obstacle():
     end_states = set([(targetX, targetY)])
 
     obstacles = set()
-    random.seed(42)
+    
     n_obstacles = 5
     robot_nodes_list = list(robot_nodes)
     while (len(obstacles) < n_obstacles):
@@ -804,7 +813,7 @@ def create_scenario_refuel():
     end_states = set()
 
     for energy in range(max_energy + 1):
-        state = (targetX, targetY, 0)
+        state = (targetX, targetY, energy)
         targets.add(state)
         end_states.add(state)
 
@@ -922,7 +931,6 @@ def create_scenario_rock():
                         d = [qual, taken, last_obs]
             tp += d
         robot_nodes.add(tuple(tp))
-    
     slippery_prob = 0.1
     robot_edges = {}
     # print(robot_nodes)
@@ -1026,9 +1034,9 @@ def create_scenario_rock():
     return pomdp
 
 def test_scenario():
-    pomdp = create_scenario_refuel()
+    pomdp = create_scenario_refuel() # no states can reach target with prob 1 
     # pomdp = create_scenario_obstacle()
-    # pomdp = create_scenario_rock()
+    pomdp = create_scenario_rock() # initial state cannot reach target
     pomdp.write_model()
     H = 3
     motion_mdp, AccStates = pomdp.compute_accepting_states()
@@ -1067,10 +1075,18 @@ def test_scenario():
                 print("error dynamic obstacle in Winning Region", (obstacle, i))
 
 if __name__ == "__main__":
-    # test_scenario()
-    pomdp = create_scenario_obstacle()
-    pomdp.write_model()
-    print(pomdp.obstacles)
+    test_scenario()
+    # pomdp = create_scenario_obstacle()
+    # pomdp.write_model()
+    # print(pomdp.obstacles)
     # create_scenario_refuel()
-    # create_scenario_rock()
+    create_scenario_rock()
     pass
+
+    # bad states
+        # avoid obstacles
+        # avoid states that with 0 energy: 
+        # avoid unchecked obstacle
+        # rock: (3, 3) : (1, 0)
+        #   robot != rock
+        # rock: 1 => robot = rock
