@@ -378,6 +378,34 @@ class Model:
         return ACP
 
 
+    def set_transition_prob(self):
+        for fnode in self.robot_nodes: 
+            for actionIndex, action in enumerate(self.actions):
+                u = self.actions[actionIndex]
+                c = self.cost[actionIndex]
+                cumulative_prob = 0
+                succ_set = dict()
+                n_next_positions = len(self.transiton[actionIndex])
+                for i in range(n_next_positions):
+                    dx, dy = self.transiton[actionIndex][i]
+                    prob = self.transition_prob[actionIndex][i]
+                    tnode = (fnode[0] + dx, fnode[1] + dy)
+                    if tnode in self.robot_nodes:
+                        cumulative_prob += prob
+                        self.robot_edges[(fnode, u, tnode)] = (prob, c)
+                        succ_prop = {tnode: prob}
+                        succ_set.update(succ_prop)
+                if not succ_set:     # if no successor, stay the same state
+                    succ_set[fnode] = 1
+                else:                # make prob sum to 1
+                    for tnode in succ_set:
+                        succ_set[tnode] += (1 - cumulative_prob) / len(succ_set)
+                if fnode not in self.state_action_reward_map: self.state_action_reward_map[fnode] = {}
+                self.state_action_reward_map[fnode][actionIndex] = c
+                if fnode not in self.robot_state_action_map: self.robot_state_action_map[fnode] = {}
+                self.robot_state_action_map[fnode][actionIndex] = succ_set
+                self.state_tra[actionIndex][fnode] = succ_set
+  
 def compute_dfa():
     #----compute DFA----
     #reach_avoid = '! obstacle U target'
