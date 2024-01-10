@@ -11,8 +11,8 @@ import copy
 from collections import defaultdict
 import numpy as np
 import copy
-# def print(*args, **kwargs):
-#     return
+def print(*args, **kwargs):
+    return
 class Model:
     def __init__(self, robot_nodes, actions, robot_edges, cost, initial_belief,
                 targets = [], end_states = set(), state_reward = {}, preferred_actions = [], 
@@ -37,7 +37,7 @@ class Model:
         self.rocks = rocks # [(x, y)] 
         self.unsafe_states = unsafe_states
 
-        # will be set later for pomdp
+        # will be set later for pomcp
         self.state_observation_map = defaultdict(tuple)
         self.observation_state_map = defaultdict(list)
 
@@ -130,7 +130,7 @@ class Model:
         obstacle_new = dict()
         for i in range(H):
             obstacle_new[i+1] = obstacle_static.union(ACP[i+1])
-        print( "------- obstacle_new", obstacle_new,)
+        # print( "------- obstacle_new", obstacle_new,)
         observation_state_map_change_record = set()
         state_observation_map_change_record = set()
         #----add time counter----
@@ -769,7 +769,10 @@ def create_scenario_obstacle(random_seed = 42):
 
     state_reward = defaultdict(int)
     for state in targets:
-        state_reward[state] = 10000
+        state_reward[state] += 1000
+    for state in obstacles:
+        state_reward[state] += -10
+
 
     pomdp = Model(robot_nodes, actions, robot_edges, cost,
                     initial_belief,  targets, end_states, state_reward, preferred_actions, obstacles,)
@@ -1088,5 +1091,5 @@ if __name__ == "__main__":
         # avoid states that with 0 energy: 
         # avoid unchecked obstacle
         # rock: (3, 3) : (1, 0)
-        #   robot != rock
+        # robot != rock
         # rock: 1 => robot = rock
