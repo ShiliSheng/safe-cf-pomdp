@@ -145,7 +145,7 @@ class POMCPNode:
         return state in self.belief
     
 class POMCP:
-    def __init__(self, pomdp, shieldLevel = 0, shieldHorizon = 5,  constant = 10, maxDepth = 100 ):
+    def __init__(self, pomdp, shieldLevel = 0, shieldHorizon = 5,  constant = 10, maxDepth = 100, numSimulations = 2 ** 12):
 
         # def __init__(self, initial_belief, actions, robot_state_action_map, state_to_observation, state_action_reward_map, 
         #              end_states, constant = 1000, maxDepth = 100, targets = set()):
@@ -153,7 +153,7 @@ class POMCP:
         # c (float): Parameter that controls the importance of exploration in the UCB heuristic. Default value is 1.
         # no_particles (int): Controls the maximum number of particles that will be kept at each node 
         #                       and the number of particles that will be sampled from the posterior belief after an action is taken.
-        self.numSimulations = 2 ** 13
+        self.numSimulations = numSimulations
         self.gamma = 0.95
         self.e = 0.05
         self.noParticles = 1200
@@ -314,7 +314,7 @@ class POMCP:
                 print("==MCTS after num simulation", n)
         for actionIndex in self.root.children:
             qnode = self.root.get_child_by_action_index(actionIndex)
-            print("MCTS",actionIndex, qnode.v, qnode.n)
+            # print("MCTS",actionIndex, qnode.v, qnode.n)
         if self.verbose >= 1:
             print("finishing all simulations", self.numSimulations)
             
@@ -547,7 +547,7 @@ class POMCP:
             return random.choice(besta)
         else:
             if not action_index_candidates:
-                return -1
+                return -1 if not ucb else random.choice(len(self.pomdp.actions))
             actionIndex = random.choice(action_index_candidates)
             qParent = vnode.parent
             vParent = qParent.parent
