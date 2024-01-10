@@ -24,8 +24,11 @@ import os
 import copy
 from datetime import datetime
 
+def print(*args, **kwargs):
+    return
+
 def get_min_distance(state_ground_truth, Y_cur_agents):
-    cx, cy = state_ground_truth
+    cx, cy = state_ground_truth[0], state_ground_truth[1]
     cur_min_distance = float("inf")
     for j in range(len(Y_cur_agents) // 2):
         px, py = Y_cur_agents[2 * j], Y_cur_agents[2 * j + 1]
@@ -41,7 +44,8 @@ def plot_gif(figure_path):
         os.makedirs(gif_path)
     imageio.mimsave(gif_path + 'output.gif', images, duration=0.5)  
 
-def plot_figure(state_ground_truth, pomcp, Y_cur_agents, estimation_moving_agents,  H, log_time, i_episode, cur_time, cur_min_distance, textinfo):
+def plot_figure(state_ground_truth, pomcp, Y_cur_agents, estimation_moving_agents,  
+                H, log_time, i_episode, cur_time, cur_min_distance, textinfo, constraints, action):
     shieldLevel = pomcp.shieldLevel
     fig, ax = plt.subplots()   
     ax.set_aspect('equal')             
@@ -78,7 +82,7 @@ def plot_figure(state_ground_truth, pomcp, Y_cur_agents, estimation_moving_agent
             plt.scatter(x, y, color = cmap(j//2), marker = '.', alpha = a * tau + b)
             circle = patches.Circle((x,y), radius = r, edgecolor=cmap(i//2), facecolor=cmap(j//2), alpha =  a * tau + b)
             ax.add_patch(circle)
-    plt.title("Time: {}, Action: {}, cur_min_distance:{}".format(cur_time, pomcp.pomdp.actions[actionIndex], str(cur_min_distance)[:3]))
+    plt.title("Time: {}, Action: {}, cur_min_distance:{}".format(cur_time, action, str(cur_min_distance)[:3]))
     figure_path = "./figures/{}-ShieldLevel-{}/Episode_{}/".format(log_time, shieldLevel, i_episode)
     if not os.path.exists(figure_path):
         os.makedirs(figure_path)
@@ -86,44 +90,15 @@ def plot_figure(state_ground_truth, pomcp, Y_cur_agents, estimation_moving_agent
     plt.savefig(figure_path + "figure_{}.jpg".format(str(cur_time).zfill(3)), dpi=300)
     plt.close()
 
-# def record_data(episode_result, episode_index, step,
-#                         shieldLevel , history_length, 
-#                         prediction_length , target_failure_prob_delta
-#                         acp_learning_gamma, safe_distance, 
-#                         cumulative_discounted_reward, , cumulative_undiscounted_reward, reward, 
-#                         robot_state = state_ground_truth,  robot_belief = belief, 
-#                         observation = obs_nxt_node, cur_min_distance = cur_min_distance,
-#                         selected_action = action, disallowed_actions = disallowed_actions,
-#                         dynamic_agents = Y_cur_agents, estimated_region = estimated_region,
-#                         static_obstacles = pomdp.obstacles, refuel_stations = pomdp.refuel_stations, rocks = pomdp.rocks
-#                         ):
-        
-#     record_data(episode_result, episode_index = episode_index, step = cur_time,
-#                 shieldLevel = shieldLevel, history_length = history_length, 
-#                 prediction_length = prediction_length , target_failure_prob_delta = target_failure_prob_delta,
-#                 acp_learning_gamma = acp_learing_gamma,  safe_distance = safe_distance,
-#                 cumulative_discounted_reward = cumulative_discounted_reward, 
-#                 cumulative_undiscounted_reward = cumulative_undiscounted_reward, reward = reward,
-#                 robot_state = state_ground_truth,  robot_belief = pomcp.root.belief.keys(), 
-#                 observation = obs_nxt_node, cur_min_distance = cur_min_distance,
-#                 selected_action = action, disallowed_actions = disallowed_actions,
-#                 dynamic_agents = Y_cur_agents, estimated_region = estimated_region,
-#                 static_obstacles = pomdp.obstacles, refuel_stations = pomdp.refuel_stations, rocks = pomdp.rocks
-#                 )
-#     return
 
-if __name__ == "__main__":
-    record_columns = ['Episode', 'Step', 'Shield Level', 'Look-back Length', 'Predict Horizon', 'Failure Rate', 
-               'ACP Learning', 'Safe Distance', 'Cumulative Discounted Reward', 'Cumulative Undiscounted Reward', 
-               'Step Reward', 'Robot State', 'Belief States', 'Current Minimum Distance to Agents', 'Selected Action',
-                 'Disallowed Actions', 'Dynamcic Agents', 'Estimated Region', 'Stacic Obstacles', 'Refule Stations', 'Rocks']
+
+def test(grid_size, shieldLevel, target_failure_prob_delta, num_agents_tracked = 3):
     log_time = f"{datetime.now().strftime('%Y-%m-%d-%H-%M')}"
     
     max_steps = 100
     explore_constant = 1000
-    shieldLevel = 1
-    step = 0
-    num_episodes = 3
+    # shieldLevel = 1
+    num_episodes = 20
 
     #Settings for LSTM trajectory prediction
     history_length, prediction_length, model_file = 4, 3, 'model_weights-4-3_2024-01-02_11-50.pth'
@@ -135,20 +110,20 @@ if __name__ == "__main__":
 
     # Settings for conformal prediction
     path = "./OpenTraj/datasets/ETH/seq_eth/"
-    num_agents_tracked = 3
     test_dataset =  pd.read_csv(path + "test_dynammic_agents_0.csv", index_col = 0)
     starting_col_index = 0 # in the dataframe, where is the starting col of values
-    target_failure_prob_delta = 0.1
+    # target_failure_prob_delta
+
     acp_learing_gamma = 0.2
     safe_distance = 0.5
+    model_type = "Obstacle"
 
-    file_path = './results/' +  log_time + "-shield_{}-lookback_{}-prediction_{}-failure_{}/".format(shieldLevel,history_length, prediction_length, target_failure_prob_delta)
+    file_path = './results/' + model_type + "/"  + "shield_{}-lookback_{}-prediction_{}-failure_{}".format(shieldLevel,history_length, prediction_length, target_failure_prob_delta) + "-" + log_time +"//"
     if not os.path.exists(file_path): os.makedirs(file_path)
 
-    result = pd.DataFrame(columns = record_columns)
+    results = []
     for episode_index in range(num_episodes):
-        
-        episode_result = pd.DataFrame()
+        step_record = []
         pomdp = create_scenario_obstacle(random_seed = 42 + episode_index)
         pomcp = POMCP(pomdp, shieldLevel, prediction_model.prediction_length, explore_constant)
         pomcp.reset_root()
@@ -159,13 +134,13 @@ if __name__ == "__main__":
         dynamic_agents = prediction_model.create_online_dataset(test_dataset, num_agents_tracked)
         
         state_ground_truth = pomcp.root.sample_state_from_belief()
-        cur_time = -1
-        
         reward = 0
         cumulative_discounted_reward = 0
         cumulative_undiscounted_reward = 0
         discount = 1
         cur_min_distance = 1000
+        count_unsafe_action = 0
+        count_unsafe_state = 0
         action = ""
 
         error = [[0] * (H+1) for _ in range(max_steps + 10)]
@@ -176,33 +151,39 @@ if __name__ == "__main__":
         for tau in range(1, H + 1):
             failure_prob_delta[0][tau] = target_failure_prob_delta
 
-        data = {
-            "Episode": episode_index, "Step": step, 
-            "Shield Level": shieldLevel, "Look-back Length": history_length, "Predict Horizon": prediction_length, 
-            "Failure Rate": target_failure_prob_delta, "ACP Learning": acp_learing_gamma, "Safe Distance": safe_distance,
-            "Cumulative Discounted Reward": cumulative_discounted_reward, 
-            "Cumulative Undiscounted Reward": cumulative_undiscounted_reward, "Step Reward": reward,
-            "Robot State": state_ground_truth, "Belief States": list(pomcp.root.belief.keys()), 
-            "Refule Stations":pomcp.pomdp.refule_stations, "Rocks": pomcp.pomdp.rocks
-            }
-        # def append_row(episode_result, data):
-        #     data_length = len(episode_result)
-        #     for key in data:
-        #         episode_result.loc[data_length, key] = data[key]
-        episode_result = pd.concat([episode_result, pd.DataFrame([data], columns = data.keys())])
-
         done = False
+        cur_time = 0
+        action_step = 0
+        clock_time = time.time()
+
         while not done and cur_time < max_steps:
             done = state_ground_truth in pomcp.pomdp.end_states
-            cur_time += 1
-            
+            if (state_ground_truth[0], state_ground_truth[1]) in pomcp.pomdp.obstacles:
+                count_unsafe_state += 1
             estimation = prediction_model.predict(dynamic_agents, cur_time, starting_col_index )  # Line 3, 4 
             for i, row in enumerate(estimation): estimation_moving_agents[cur_time][i+1] = row
-
-            if cur_time < H: continue # assuming the agent is not starting until Timestamp H
-
             Y_cur_agents = dynamic_agents.loc[cur_time,:].values[starting_col_index:] # Check index
             cur_min_distance = get_min_distance(state_ground_truth, Y_cur_agents)
+
+            if cur_time < H: 
+                data = {
+                    "Episode": episode_index, "Current Time Step": cur_time, "Action Step": action_step, "Clock Time": time.time() - clock_time,
+                    "Shield Level": shieldLevel, "Look-back Length": history_length, "Predict Horizon": prediction_length, 
+                    "Failure Rate": target_failure_prob_delta, "ACP Learning": acp_learing_gamma, "Safe Distance": safe_distance,
+                    "Cumulative Discounted Reward": cumulative_discounted_reward, 
+                    "Cumulative Undiscounted Reward": cumulative_undiscounted_reward, "Step Reward": reward,
+                    "Robot State": state_ground_truth, "Belief States": list(pomcp.root.belief.keys()), 
+                    "Current Minimum Distance to Agents": cur_min_distance,   "Dynamcic Agents": Y_cur_agents, 
+                    "Stacic Obstacles": pomcp.pomdp.obstacles,  "Refule Stations":pomcp.pomdp.refule_stations, "Rocks": pomcp.pomdp.rocks,
+                    "Number of Unsafe Action": count_unsafe_action, "Number of Unsafe State": count_unsafe_state, "done": done,
+                    "Number of Dynamic Agents": num_agents_tracked, 
+                    # "Selected Action": action, "Disallowed Actions": [pomcp.actions[idx] for idx in pomcp.root.illegalActionIndexes],
+                    # "Estimated Region": estimated_region, 
+                }
+                # episode_result = pd.concat([episode_result, pd.DataFrame([data], columns = data.keys())])
+                step_record.append(pd.DataFrame([data], columns = data.keys()))
+                cur_time += 1
+                continue # assuming the agent is not starting until Timestamp H
 
             for tau in range(1, H + 1):
                 Y_est = estimation_moving_agents[cur_time-tau][tau]                                       # Line 7
@@ -222,12 +203,31 @@ if __name__ == "__main__":
                 ACP_step = pomdp.build_restrictive_region(estimation_moving_agents[cur_time], constraints[cur_time+1], H, safe_distance)
 
                 obs_current_node = pomcp.get_observation(state_ground_truth)
+                # t1 = time.time()
                 obs_mdp, Winning_obs, A_valid, observation_state_map_change_record, state_observation_map_change_record  \
                         = pomcp.pomdp.online_compute_winning_region(obs_current_node, AccStates, observation_successor_map, H, ACP_step)
-
+                # t2 = time.time()
+                # print("time for winning", t2 - t1)
                 actionIndex = pomcp.select_action()          # compute using generated WR and updated state_map
+                if actionIndex == -1:
+                    count_unsafe_action += 1
+                    if pomcp.pomdp.preferred_actions:
+                        actionIndex = random.choice(pomcp.pomdp.preferred_actions)
+                    else:
+                        actionIndex = random.choice([idx for idx in range(len(pomcp.pomdp.actions))])
+                # t3 = time.time()
+                # print("time for actiong", t3 - t2)
+                action_step += 1
                 action = pomcp.pomdp.actions[actionIndex]
-                # disallowed_actions = [
+
+                # print("=====step", cur_time, "s", state_ground_truth, "action", pomcp.pomdp.actions[actionIndex],  "s'", next_state_ground_truth,
+                #         "observation", obs_current_node, pomcp.root.belief, Y_cur_agents, "undiscounted reward", cumulative_undiscounted_reward, pomcp.pomdp.obstacles,
+                #         pomcp.R_max, pomcp.R_min, ACP_step)
+                # print("constraints", constraints[cur_time+1])
+                # textinfo = str(pomcp.root.illegalActionIndexes)
+                # plot_figure(state_ground_truth, pomcp, Y_cur_agents, estimation_moving_agents,  
+                #         H, log_time, episode_index, cur_time, cur_min_distance, textinfo, constraints, action)
+
                 next_state_ground_truth = pomcp.step(state_ground_truth, actionIndex)
                 obs_nxt_node = pomcp.get_observation(next_state_ground_truth)
                 pomcp.update(actionIndex, obs_nxt_node)
@@ -235,38 +235,68 @@ if __name__ == "__main__":
                 reward = pomcp.step_reward(state_ground_truth, actionIndex)
                 cumulative_discounted_reward  += reward * discount
                 discount *= pomcp.gamma
-                cumulative_discounted_reward += reward
-
-                textinfo = str(pomcp.root.illegalActionIndexes)
-
-                print("=====step", cur_time, "s", state_ground_truth, "action", pomcp.pomdp.actions[actionIndex],  "s'", next_state_ground_truth,
-                        "observation", obs_current_node, pomcp.root.belief, Y_cur_agents, "undiscounted reward", cumulative_undiscounted_reward, pomcp.pomdp.obstacles,
-                        pomcp.R_max, pomcp.R_min, ACP_step)
-                print("constraints", constraints[cur_time+1])
-                plot_figure(state_ground_truth, pomcp, Y_cur_agents, estimation_moving_agents,  H, log_time, episode_index, cur_time, cur_min_distance, textinfo)
+                cumulative_undiscounted_reward += reward
 
                 state_ground_truth = next_state_ground_truth
                 pomcp.pomdp.restore_states_from_change(observation_state_map_change_record, state_observation_map_change_record )                    
                 # print(pomcp.pomdp.observation_state_map == pomcp.pomdp.observation_state_map_default, pomcp.pomdp.state_observation_map == pomcp.pomdp.state_observation_map_default )
 
-            
             data = {
-                "Episode": episode_index, "Step": step, 
+                "Episode": episode_index, "Current Time Step": cur_time, "Action Step": action_step, "Clock Time": time.time() - clock_time,
                 "Shield Level": shieldLevel, "Look-back Length": history_length, "Predict Horizon": prediction_length, 
                 "Failure Rate": target_failure_prob_delta, "ACP Learning": acp_learing_gamma, "Safe Distance": safe_distance,
                 "Cumulative Discounted Reward": cumulative_discounted_reward, 
                 "Cumulative Undiscounted Reward": cumulative_undiscounted_reward, "Step Reward": reward,
                 "Robot State": state_ground_truth, "Belief States": list(pomcp.root.belief.keys()), 
-                "Current Minimum Distance to Agents": cur_min_distance,  
+                "Current Minimum Distance to Agents": cur_min_distance,   "Dynamcic Agents": Y_cur_agents, 
+                "Stacic Obstacles": pomcp.pomdp.obstacles,  "Refule Stations":pomcp.pomdp.refule_stations, "Rocks": pomcp.pomdp.rocks,
+                "Number of Unsafe Action": count_unsafe_action, "Number of Unsafe State": count_unsafe_state, "done": done,
+                "Number of Dynamic Agents": num_agents_tracked, 
                 "Selected Action": action, "Disallowed Actions": [pomcp.actions[idx] for idx in pomcp.root.illegalActionIndexes],
-                "Dynamcic Agents": Y_cur_agents, "Estimated Region": estimated_region, "Stacic Obstacles": pomcp.pomdp.obstacles, 
-                "Refule Stations":pomcp.pomdp.refule_stations, "Rocks": pomcp.pomdp.rocks
+                "Estimated Region": estimated_region
             }
-            episode_result = pd.concat([episode_result, pd.DataFrame([data], columns = data.keys())])
+            step_record.append(pd.DataFrame([data], columns = data.keys()))
+            cur_time += 1
+        # plot_gif(figure_path = "./figures/{}-ShieldLevel-{}/Episode_{}/".format(log_time, shieldLevel, episode_index))
+            
+        episode_log = pd.concat(step_record, ignore_index=True)
+        episode_log.to_csv(file_path + "Episode-{}.csv".format(episode_index))
+        index_of_action_step_1 = episode_log.loc[episode_log["Action Step"] == 1].index
+        action_time_sent = episode_log["Clock Time"].iloc[-1] - episode_log.loc[index_of_action_step_1, "Clock Time"].values[0]
 
-        episode_path = file_path + "Episode{}/".format(episode_index)
-        if not os.path.exists(episode_path): os.makedirs(episode_path)
-        episode_result.to_csv(episode_path + "{}.csv".format(episode_index))
-        plot_gif(figure_path = "./figures/{}-ShieldLevel-{}/Episode_{}/".format(log_time, shieldLevel, episode_index))
-        result = pd.concat([result, episode_result])
+        experiment_data = {
+            "Episode": episode_index, "Number of Dynamic Agents": num_agents_tracked,  "Model": model_type,
+            "Shield Level": shieldLevel, "Look-back Length": history_length, "Predict Horizon": prediction_length, 
+            "Failure Rate": target_failure_prob_delta, "ACP Learning": acp_learing_gamma, "Safe Distance": safe_distance,
+            "Reached Target": 1 if done else 0,
+            "Minimum Distance to Agents": episode_log["Current Minimum Distance to Agents"].min(),
+            "Number of Unsafe State": episode_log["Number of Unsafe State"].iloc[-1],
+            "Number of Unsafe Action": episode_log["Number of Unsafe Action"].iloc[-1],
+            "Cumulative Discounted Reward": episode_log["Cumulative Discounted Reward"].iloc[-1],
+            "Cumulative Undiscounted Reward": episode_log["Cumulative Undiscounted Reward"].iloc[-1],
+            "Max Step": max_steps,
+            "Number of Time Steps": episode_log["Current Time Step"].iloc[-1],
+            "Number of Action Steps": episode_log["Action Step"].iloc[-1],
+            "Time spent in seconds": episode_log["Clock Time"].iloc[-1],
+            "Action Time spent in seconds": action_time_sent,
+            "Action Time spent per action in seconds": action_time_sent / episode_log["Action Step"].iloc[-1], 
+            "POMCP Number of Simulations": pomcp.numSimulations,
+            "POMCP constant": pomcp.c,
+        }
+        
+        results.append(pd.DataFrame([experiment_data], columns = experiment_data.keys()))
+    result = pd.concat(results, ignore_index=True)
     result.to_csv(file_path + "result.csv")
+
+if __name__ == "__main__":
+    setting = [
+                (0, 0.1, 5), (1, 0.05, 5), (1, 0.1, 5), (1, 0.2, 5)
+                ]
+    # num_agents_tracked = 3
+    for grid_size in [22]:
+        for num_agents_tracked in [5, 10, 15]:
+            for failure_prob in [0.05, 0.1, 0.2]:
+                for prediction_horizon in [3, 5, 10]:
+                    for shieldLevel in [0, 1]:
+                        test(grid_size, shieldLevel, failure_prob, num_agents_tracked)
+                        pass
