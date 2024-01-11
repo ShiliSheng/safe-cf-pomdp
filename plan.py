@@ -16,12 +16,12 @@ from collections import defaultdict
 import pandas as pd
 from itertools import chain
 from sortedcontainers import SortedList
-import os
+import os, yaml
 import copy
 from datetime import datetime
 
-def print(*args, **kwargs):
-    return
+# def print(*args, **kwargs):
+#     return
 
 def get_min_distance(state_ground_truth, Y_cur_agents):
     cx, cy = state_ground_truth[0], state_ground_truth[1]
@@ -34,7 +34,7 @@ def get_min_distance(state_ground_truth, Y_cur_agents):
 
 def test(grid_size, shieldLevel, target_failure_prob_delta, num_agents_tracked = 3, num_episodes = 20):
     log_time = f"{datetime.now().strftime('%Y-%m-%d-%H-%M')}"
-    max_steps = 100
+    max_steps = 200
     explore_constant = 1000
     # shieldLevel = 1
     # num_episodes = 20
@@ -57,12 +57,13 @@ def test(grid_size, shieldLevel, target_failure_prob_delta, num_agents_tracked =
     safe_distance = 0.5
     model_type = "Obstacle"
 
-    file_path = './results/' + model_type +  "GridSize-{}".format(grid_size) + "/"  + "shield_{}-lookback_{}-prediction_{}-failure_{}".format(shieldLevel,history_length, prediction_length, target_failure_prob_delta) + "-" + log_time +"//"
+    file_path = './results/' + model_type +  "GridSize-{}".format(grid_size) + "/"  + "shield_{}-lookback_{}-prediction_{}-failure_{}".format(shieldLevel,history_length, prediction_length, target_failure_prob_delta) + "-" + log_time +"/"
     if not os.path.exists(file_path): os.makedirs(file_path)
 
     results = []
     pomdp = create_scenario_obstacle(random_seed = 42)
     for episode_index in range(num_episodes):
+        print(file_path, episode_index)
         step_record = []
         pomcp = POMCP(pomdp, shieldLevel, prediction_model.prediction_length, explore_constant)
         pomcp.reset_root()
@@ -98,9 +99,15 @@ def test(grid_size, shieldLevel, target_failure_prob_delta, num_agents_tracked =
             done = state_ground_truth in pomcp.pomdp.end_states
             if (state_ground_truth[0], state_ground_truth[1]) in pomcp.pomdp.obstacles:
                 count_unsafe_state += 1
+            
             estimation = prediction_model.predict(dynamic_agents, cur_time, starting_col_index )  # Line 3, 4 
+            
             for i, row in enumerate(estimation): estimation_moving_agents[cur_time][i+1] = row
+            
             Y_cur_agents = dynamic_agents.loc[cur_time,:].values[starting_col_index:] # Check index
+
+            cur_agents = set([(Y_cur_agents[i], Y_cur_agents[i+1]) for i in range(0, len(Y_cur_agents), 2)])
+
             cur_min_distance = get_min_distance(state_ground_truth, Y_cur_agents)
 
             if cur_time < H: 
@@ -124,7 +131,9 @@ def test(grid_size, shieldLevel, target_failure_prob_delta, num_agents_tracked =
 
             for tau in range(1, H + 1):
                 Y_est = estimation_moving_agents[cur_time-tau][tau]                                       # Line 7
-                estimation_error = prediction_model.compute_prediction_error(Y_cur_agents, Y_est)                # TODO check formula of Line 7
+                
+                estimation_error = prediction_model.compute_prediction_error(Y_cur_agents, Y_est)         # TODO check formula of Line 7
+                
                 cf_scores[tau].add(estimation_error)
 
                 error[cur_time][tau] = 0 if estimation_error <= constraints[cur_time][tau] else 1         # Line 6
@@ -161,7 +170,11 @@ def test(grid_size, shieldLevel, target_failure_prob_delta, num_agents_tracked =
                     = pomcp.pomdp.online_compute_winning_region(obs_current_node, AccStates, observation_successor_map, H, ACP_step)
             # t2 = time.time()
             # print("time for winning", t2 - t1)
+            
+            # for cur_agent_state in cur_agents: pomdp.state_reward[cur_agent_state] -= 50
             actionIndex = pomcp.select_action()          # compute using generated WR and updated state_map
+            # for cur_agent_state in cur_agents: pomdp.state_reward[cur_agent_state] += 50
+
             if actionIndex == -1:
                 count_unsafe_action += 1
                 if pomcp.pomdp.preferred_actions:
@@ -204,11 +217,14 @@ def test(grid_size, shieldLevel, target_failure_prob_delta, num_agents_tracked =
         with open(file_path + "Episode-{}.pkl".format(episode_index), 'wb') as file:
             pickle.dump(step_record, file)
 
-        step_records = [pd.DataFrame([dt], columns = dt.keys()) for dt in step_record]
-        episode_log = pd.concat(step_records, ignore_index=True)
-        episode_log.to_csv(file_path + "Episode-{}.csv".format(episode_index))
-        index_of_action_step_1 = episode_log.loc[episode_log["Action Step"] == 1].index
-        action_time_sent = episode_log["Clock Time"].iloc[-1] - episode_log.loc[index_of_action_step_1, "Clock Time"].values[0]
+        # episode_log = pd.concat([pd.DataFrame([dt], columns = dt.keys()) for dt in step_record], ignore_index=True)
+        # episode_log.to_csv(file_path + "Episode-{}.csv".format(episode_index))
+        episode_min_dist = min([r["Current Minimum Distance to Agents"] for r in step_record])
+        index_of_action_step_1 = -1
+        for k, r in enumerate(step_record):
+            if k+1 < len(step_record) and step_record[k+1]["Action Step"] == 1:
+                index_of_action_step_1 = k
+        action_time_spent = step_record[-1]["Clock Time"] - step_record[index_of_action_step_1]["Clock Time"]
 
         experiment_data = {
             "Grid Size": grid_size,
@@ -216,17 +232,17 @@ def test(grid_size, shieldLevel, target_failure_prob_delta, num_agents_tracked =
             "Shield Level": shieldLevel, "Look-back Length": history_length, "Predict Horizon": prediction_length, 
             "Failure Rate": target_failure_prob_delta, "ACP Learning": acp_learing_gamma, "Safe Distance": safe_distance,
             "Reached Target": 1 if done else 0,
-            "Minimum Distance to Agents": episode_log["Current Minimum Distance to Agents"].min(),
-            "Number of Unsafe State": episode_log["Number of Unsafe State"].iloc[-1],
-            "Number of Unsafe Action": episode_log["Number of Unsafe Action"].iloc[-1],
-            "Cumulative Discounted Reward": episode_log["Cumulative Discounted Reward"].iloc[-1],
-            "Cumulative Undiscounted Reward": episode_log["Cumulative Undiscounted Reward"].iloc[-1],
+            "Minimum Distance to Agents": episode_min_dist,
+            "Number of Unsafe State": count_unsafe_state,
+            "Number of Unsafe Action": count_unsafe_action,
+            "Cumulative Discounted Reward": cumulative_discounted_reward,
+            "Cumulative Undiscounted Reward": cumulative_undiscounted_reward,
             "Max Step": max_steps,
-            "Number of Time Steps": episode_log["Current Time Step"].iloc[-1],
-            "Number of Action Steps": episode_log["Action Step"].iloc[-1],
-            "Time spent in seconds": episode_log["Clock Time"].iloc[-1],
-            "Action Time spent in seconds": action_time_sent,
-            "Action Time spent per action in seconds": action_time_sent / episode_log["Action Step"].iloc[-1], 
+            "Number of Time Steps": cur_time,
+            "Number of Action Steps": action_step,
+            "Time spent in seconds": step_record[-1]["Clock Time"],
+            "Action Time spent in seconds": action_time_spent,
+            "Action Time spent per action in seconds": action_time_spent / action_step, 
             "POMCP Number of Simulations": pomcp.numSimulations,
             "POMCP constant": pomcp.c,
         }
@@ -240,13 +256,16 @@ if __name__ == "__main__":
                 (0, 0.1, 5), (1, 0.05, 5), (1, 0.1, 5), (1, 0.2, 5)
                 ]
     
-    # num_agents_tracked = 3
-    # for grid_size in [22]:
-    #     for num_agents_tracked in [5, 10, 15]:
-    #         for target_failure_prob_delta in [0.05, 0.1, 0.2]:
-    #             for prediction_horizon in [3, 5, 10]:
-    #                 for shieldLevel in [0, 1]:
-    #                     test(grid_size, shieldLevel, failure_prob, num_agents_tracked)
+    for grid_size in [22]:
+        for prediction_horizon in [3, 5, 10]:
+            for num_agents_tracked in [5, 10, 15]:
+                for target_failure_prob_delta in [0.05, 0.1, 0.2]:
+                    for shieldLevel in [0, 1]:
+                        test(grid_size, shieldLevel, target_failure_prob_delta, num_agents_tracked, num_episodes = 100)
     
-    test(grid_size = 22, shieldLevel = 1, target_failure_prob_delta = 0.1, num_agents_tracked = 3, num_episodes = 3)
+    # make sure to set up predicition model
+    # adjust agents locations
+    # adjust grid size                        
+                        
+    # test(grid_size = 22, shieldLevel = 1, target_failure_prob_delta = 0.1, num_agents_tracked = 3, num_episodes = 3)
     # pass
