@@ -13,6 +13,7 @@ import time
 from itertools import chain
 import random
 from datetime import datetime
+from preprocess import load_dataset 
 
 class LSTMModel(nn.Module):
     def __init__(self, input_size, hidden_size, output_size):
@@ -26,174 +27,30 @@ class LSTMModel(nn.Module):
         return output
 
 class Predictor():
-    def __init__(self, history_length, prediction_length, training_epochs = 100) -> None:
-        self.input_size = 2  # Assuming 2 features (x, y) per timestep
-        self.hidden_size = 64
-        self.output_size = 2  # Assuming 2 features in the output
+    def __init__(self, history_length, prediction_length, input_size = 2, 
+                 hidden_size = 64, output_size = 2, training_epochs = 100) -> None:
+        self.input_size = input_size # Assuming 2 features (x, y) per timestep
+        self.hidden_size = hidden_size
+        self.output_size = output_size  # Assuming 2 features in the output
         self.history_length = history_length
         self.prediction_length = prediction_length
         self.num_epochs = training_epochs
-
-    def create_test_dataset(self, df, test_data_file, subgroup_id):
-        new_df = pd.DataFrame()
-        total_length = 300
-        for pid, group in df.groupby("id"):
-            trajectory_length = len(group)
-            direction = 1
-            cnt = 0
-            cool_down = random.randint(self.history_length, 2 * self.history_length)
-            indices = group.index
-            index = 0
-            while cnt < total_length:
-                x = (group.loc[indices[index], 'x'])
-                y = (group.loc[indices[index], 'y'])
-                new_df.loc[cnt, str(pid) + "x"] = x
-                new_df.loc[cnt, str(pid) + "y"] = y
-                cnt += 1
-                index += direction
-                if cool_down and ( index == trajectory_length or index == -1):
-                    index -= direction
-                    cool_down -= 1
-                if index == trajectory_length or index == -1:
-                    direction *= -1
-                    index += direction
-                    cool_down = random.randint(self.history_length, 2 * self.history_length)
-
-        new_df = new_df.set_index(pd.RangeIndex(start=-10, stop=-10 + len(new_df)))
-        new_df.to_csv(test_data_file + "_" + str(subgroup_id) + ".csv")
-        # reshaped_dataset = test_raw_dataset.pivot_table(index='timestamp',
-        #                                             columns='id',
-        #                                             values=['x', 'y'],
-        #                                             aggfunc='first')
-
-        # # Flatten the multi-level column index
-        # reshaped_dataset.columns = [f'{col[1]}_{col[0]}' for col in reshaped_dataset.columns]
-        # # Reset the index to have 'timestamp' as a regular column
-        # reshaped_dataset = reshaped_dataset.fillna(-1)
-        # reshaped_dataset = reshaped_dataset.reindex(sorted(reshaped_dataset.columns), axis=1)
-        # reshaped_dataset = reshaped_dataset.reset_index()
-        # reshaped_dataset = reshaped_dataset.set_index(pd.RangeIndex(start=-10, stop=-10 + len(reshaped_dataset)))
-        # new_df.to_csv(test_data_file + "_" + str(subgroup_id) + ".csv")
-
-    def create_online_dataset(self, test_dataset, num_agents_tracked):
-        num_agents_total = len(test_dataset.columns) // 2 
-        tracked_agent = random.sample([i for i in range(num_agents_total)], num_agents_tracked)
-        tracked_agent_col = []
-        for i in tracked_agent:
-            tracked_agent_col.append(2 * i)
-            tracked_agent_col.append(2 * i + 1)
-        tracked_agent_col.sort()
-        starting_row = random.randint(0, 40);
-        dynamic_agents = test_dataset.iloc[starting_row:, tracked_agent_col]
-        dynamic_agents = dynamic_agents.set_index(pd.RangeIndex(start=-10, stop=-10 + len(dynamic_agents)))
-        return dynamic_agents
+        self.model = None # model untrained
+        self.device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
            
-    def preprocess(self, raw_data_file, train_data_file, validation_data_file, test_data_file):
-        csv_columns = ["frame_id", "id", "x", "z", "y", "vel_x", "vel_z", "vel_y"]
-        # read from csv => fill traj table
-        raw_dataset = pd.read_csv(raw_data_file, sep=r"\s+", header=None, names=csv_columns)
-        raw_dataset["timestamp"]= raw_dataset.frame_id
-        start_frame = raw_dataset.frame_id.min()
-        d_frame = np.diff(pd.unique(raw_dataset["frame_id"]))
-        fps = d_frame[0] * 2.5  # 2.5 is the common annotation
-        for i in raw_dataset.index:
-            raw_dataset.loc[i, "timestamp"] = (raw_dataset.loc[i, "frame_id"] - start_frame) / fps
-        ####### raw_dataset['pos'] = raw_dataset.apply(lambda row: [row['x'], row['y']], axis=1)
-        raw_dataset = raw_dataset.loc[:, ["timestamp", "id", "x", "y"]]
-
-        min_length = 10
-        trajectory_lengths = raw_dataset.groupby('id')['x'].apply(len)
-        filtered = trajectory_lengths[trajectory_lengths >= min_length].index.to_list()
-        raw_dataset = raw_dataset[raw_dataset.id.isin(filtered)]
-        raw_dataset.id.nunique()
-        for col in ["x", "y"]:
-            raw_dataset[col] = (raw_dataset[col] - raw_dataset[col].min()) #/ (raw_dataset[col].max() - raw_dataset[col].min())
-        raw_dataset["id"] = raw_dataset["id"].astype(int)
-
-        # print("preprocessed",raw_dataset.id.nunique())
-        print("xmin","xmax",raw_dataset.x.min(), raw_dataset.x.max(), raw_dataset.y.min(), raw_dataset.y.max())
-
-        train_id, test_id = train_test_split(raw_dataset.id.unique(), test_size= 1 / 10, random_state=42)
-        train_id, validation_id = train_test_split(train_id, test_size = 0.2, random_state = 42)
-        train_id, validation_id = set(train_id), set(validation_id)
-        test_id = set(test_id)
-
-        train_raw_dataset = raw_dataset[raw_dataset.id.isin(train_id)]
-        validation_raw_dataset = raw_dataset[raw_dataset.id.isin(validation_id)]
-        test_raw_datasete = raw_dataset[raw_dataset.id.isin(test_id)]
-
-        print("size of training, validation, test", len(train_id), len(validation_id), len(test_id))
-        self.create_test_dataset(test_raw_datasete, test_data_file, 0)
-        # random_seed = 42
-        # random.seed(random_seed)
-        # n_subgroup = 10
-        # # k = len(test_id) // 3 * 2
-        # k = 10
-        # test_id = list(test_id)
-        # for i in range(n_subgroup):
-        #     sub_group = set(random.sample(test_id, k))
-        #     test_raw_dataset = raw_dataset[raw_dataset.id.isin(sub_group)]
-        #     self.create_test_dataset(test_raw_dataset, test_data_file, i)
-        n_test = len(test_id)
-        # n_subgroup = 4
-        # group = n_test // n_subgroup
-        # for i in range(n_subgroup):
-        #     sub_group = set(test_id[i * group: (i + 1)* group])
-        #     test_raw_dataset = raw_dataset[raw_dataset.id.isin(sub_group)]
-        #     self.create_test_dataset(test_raw_dataset, test_data_file, i)
-        # train_raw_dataset.to_csv(path + "raw_train.csv")
-        # validation_raw_dataset.to_csv(path + "raw_validation.csv")
-        # test_raw_dataset.to_csv(path + "raw_test.csv")
-
-        ##########
-        history_length = self.history_length
-        prediction_length = self.prediction_length
-        
-        total_sequence_length = history_length + prediction_length
-
-        train_dataset = []
-        for pid, group in train_raw_dataset.groupby("id"):
-            timestamps = group["timestamp"].values
-            x_values = group["x"].values
-            y_values = group["y"].values
-            for i in range(len(group) - total_sequence_length + 1):
-                # Extract the sequence and target
-                sequence = np.column_stack((x_values[i:i+history_length], y_values[i:i+history_length]))
-                target = np.column_stack((x_values[i+history_length:i+total_sequence_length], y_values[i+history_length:i+total_sequence_length]))
-                train_dataset.append((torch.tensor(sequence, dtype=torch.float32), torch.tensor(target, dtype=torch.float32)))
-
-        validation = []
-        for pid, group in validation_raw_dataset.groupby("id"):
-            timestamps = group["timestamp"].values
-            x_values = group["x"].values
-            y_values = group["y"].values
-            for i in range(len(group) - total_sequence_length + 1):
-                # Extract the sequence and target
-                sequence = np.column_stack((x_values[i:i+history_length], y_values[i:i+history_length]))
-                target = np.column_stack((x_values[i+history_length:i+total_sequence_length], y_values[i+history_length:i+total_sequence_length]))
-                validation.append((torch.tensor(sequence, dtype=torch.float32), torch.tensor(target, dtype=torch.float32)))
-    
-        with open(train_data_file, 'wb') as handle:
-            pickle.dump(train_dataset, handle, protocol=pickle.HIGHEST_PROTOCOL)
-
-        with open(validation_data_file, 'wb') as handle:
-            pickle.dump(validation, handle, protocol=pickle.HIGHEST_PROTOCOL)
-
-    def train(self, train_datafile, output_LSTM_file):
-        with open(train_datafile, 'rb') as handle:
-            train_dataset = pickle.load(handle)
+    def train(self, train_dataset_path):
+        train_dataset = load_dataset(train_dataset_path, 'train_dataset', self.history_length, self.prediction_length)
         train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True)
-        
         history_length = self.history_length
         prediction_length = self.prediction_length
         input_size = self.input_size  
         hidden_size = self.hidden_size
         output_size = self.output_size
+        device = self.device
+
         # Create an instance of the model
         model = LSTMModel(input_size, hidden_size, output_size * prediction_length)
-        device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
         model.to(device)
-
         # Define loss function and optimizer
         criterion = nn.MSELoss()
         optimizer = optim.Adam(model.parameters(), lr=0.001)
@@ -220,14 +77,21 @@ class Predictor():
         'history_length': history_length,
         'state_dict': model.state_dict()
         }
+        output_LSTM_file = train_dataset_path + 'history-{}-prediction-{}.pth'.format(history_length, prediction_length)
         torch.save(model_metadata, output_LSTM_file)
-        print("model saved", output_LSTM_file)
+        self.model = model
+        print("model trained, loaded and saved", output_LSTM_file)
 
-    def validation(self, validation_data_file, model_file):
-        with open(validation_data_file, 'rb') as handle:
-            validation_dataset = pickle.load(handle)
+    def validate(self, train_dataset_path):
+        validation_dataset = load_dataset(train_dataset_path, 'validation_dataset', history_length, prediction_length)
         validation_dataset = DataLoader(validation_dataset, batch_size=64, shuffle=False)
-        self.load_model(model_file)
+        if not self.model:
+            model_file = train_dataset_path + 'history-{}-prediction-{}.pth'.format(self.history_length, self.prediction_length)
+            if not os.path.exists(model_file):
+                print("model not trained. Training")
+                self.train(train_dataset_path)
+            else:
+                self.load_model(model_file)
         self.model.eval()
         total_mse = 0.0
         num_batches = len(validation_dataset)
@@ -246,10 +110,15 @@ class Predictor():
         average_mse = total_mse / num_batches
         print(f"Average Mean Squared Error (MSE) on the validation set: {average_mse}")
 
-    def load_model(self, model_file):
+    def load_model(self, train_dataset_path):
         # Create an instance of the model
         # history_length = 0, prediction_legnth = 0, input_size = 0)
+        model_file = train_dataset_path + 'history-{}-prediction-{}.pth'.format(self.history_length, self.prediction_length)
+        if not os.path.exists(model_file):
+            self.train(train_dataset_path)
+            self.validate(train_dataset_path)
         loaded_model = torch.load(model_file)
+        print(model_file, "model loaded")
         self.input_size = loaded_model['input_size']
         self.hidden_size = loaded_model['hidden_size']
         self.output_size  = loaded_model['output_size']
@@ -257,9 +126,8 @@ class Predictor():
         self.history_length = loaded_model['history_length']
         self.model = LSTMModel(self.input_size, self.hidden_size, self.output_size * self.prediction_length)
         self.model.load_state_dict(loaded_model['state_dict'])
-        print("history length", self.history_length, "prediction length", self.prediction_length)
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    
+        
     def predict_case(self, x):
         self.model.eval()
         with torch.no_grad():
@@ -303,10 +171,6 @@ class Predictor():
         # ]
         return reshaped 
 
-    def conformal_prediction(self, horizon):
-        ACP = [()] * horizon
-        return ACP
-
     def compute_prediction_error(self, truth, prediction):
         N = len(truth) // 2
         cf_distance = 0
@@ -336,55 +200,45 @@ class Predictor():
             cf_distance_y = max(cf_distance_y, distance_y)
         return cf_distance_x, cf_distance_y
     
-if __name__ == "__main__":
-    log_time = f"{datetime.now().strftime('%Y-%m-%d_%H-%M')}"
-    path = './OpenTraj/datasets/ETH/seq_eth/'
-    raw_file =  path + 'obsmat.txt'
-    train_data_file = path + 'train_dataset.pickle'
-    validation_data_file = path + 'test_dataset.pickle'
-    test_data_file = path + "test_dynammic_agents"
-
-    history_length = 4
-    prediction_length = 4
-    for prediction_length in range(2, 5):
-        lstm_model = path + 'model_weights-{}-{}'.format(history_length, prediction_length) + "_" + log_time + '.pth'
-        prediction_model = Predictor(history_length, prediction_length)
-        prediction_model.preprocess(raw_file, train_data_file, validation_data_file, test_data_file)
-        prediction_model.train(train_data_file, lstm_model)
-        saved_model = lstm_model
-
-        # saved_model = 'OpenTraj/datasets/ETH/seq_eth/model_weights-4-3_2024-01-01_09-39.pth'
-        prediction_model.validation(validation_data_file, saved_model)
-
-    # prediction_model.load_model(saved_mode)
-    # H = prediction_model.prediction_length
-    # dynamic_agents =  pd.read_csv(test_data_file + "_1.csv", index_col=0)
-    # num_agents_tracked = len(dynamic_agents.columns) // 2 
-    # starting_col_index = 0
-    # max_steps = 30
-    # estimation_moving_agents = [[0 for _ in range(num_agents_tracked * 2)] * (H+1) for _ in range(max_steps + 10)] 
+    def create_online_dataset(self, test_dataset, num_agents_tracked):
+        num_agents_total = len(test_dataset.columns) // 2 
+        tracked_agent = random.sample([i for i in range(num_agents_total)], num_agents_tracked)
+        tracked_agent_col = []
+        for i in tracked_agent:
+            tracked_agent_col.append(2 * i)
+            tracked_agent_col.append(2 * i + 1)
+        tracked_agent_col.sort()
+        starting_row = random.randint(0, 40);
+        dynamic_agents = test_dataset.iloc[starting_row:, tracked_agent_col]
+        dynamic_agents = dynamic_agents.set_index(pd.RangeIndex(start=-10, stop=-10 + len(dynamic_agents)))
+        return dynamic_agents
     
-    # for cur_time in range(10, 11):
-    #     estimation = prediction_model.predict(dynamic_agents, cur_time, starting_col_index )
-    #     for i, row in enumerate(estimation):
-    #         estimation_moving_agents[cur_time][i+1] = row
-    #         Y_est = row
-    #         Y_cur = dynamic_agents.loc[cur_time + i + 1,:].values[starting_col_index:]
-    #         estimation_error = prediction_model.compute_prediction_error(Y_cur, Y_est)#
-    #         print(estimation_error, cur_time, i+1, )
-    #         # print(row)
-    #         # print(Y_cur)
-    # print("done")
-    # # et = pred.predict(dynamic_agents, 0)
-    # # t1 = time.time()
-    # # # for cur_time in range(40):
-    # # #     p = pred.predit_in_batch(dynamic_agents, cur_time)
-    # # t2 = time.time()
-    # # for cur_time in range(4):
-    # #     p = pred.predict(dynamic_agents, cur_time)
-    # #     print(p, len(p))
-    # # t3 = time.time()
-    # # print(t2-t1, t3 -t2)
-    # t = dynamic_agents.loc[-prediction_model.history_length + 1 : 0 , :]
-    # print(t)
-    # print(dynamic_agents.columns)
+if __name__ == "__main__":
+    path = './test_data/'
+    scene = "/SDD-deathCircle-video0/"
+    history_length = 4
+    prediction_length = 3
+    prediction_model = Predictor(history_length, prediction_length)
+    
+    # prediction_model.train(path + scene)
+    # prediction_model.validate(path + scene)
+    prediction_model.load_model(path + scene)
+
+    H = prediction_model.prediction_length
+    test_dataset =  pd.read_csv(path + scene + "dynamic_agents.csv", index_col=0)
+    num_agents_tracked = 2
+    starting_col_index = 0
+    max_steps = 300
+    estimation_moving_agents = [[0 for _ in range(num_agents_tracked * 2)] * (H+1) for _ in range(max_steps + 10)] 
+
+    dynamic_agents = prediction_model.create_online_dataset(test_dataset, num_agents_tracked)
+    for cur_time in range(10, 50):
+        estimation = prediction_model.predict(dynamic_agents, cur_time, starting_col_index )
+        for i, row in enumerate(estimation):
+            estimation_moving_agents[cur_time][i+1] = row
+            Y_est = row
+            Y_cur = dynamic_agents.loc[cur_time + i + 1,:].values[starting_col_index:]
+            estimation_error = prediction_model.compute_prediction_error(Y_cur, Y_est)#
+            # print(estimation_error, cur_time, i+1, )
+            # print(row)
+            print(Y_cur)
