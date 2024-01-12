@@ -9,6 +9,7 @@ import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset
 import torch.optim as optim
 from sklearn.model_selection import train_test_split
+import matplotlib.pyplot as plt
 
 def filter_length(raw_dataset, min_length = 10):
     trajectory_lengths = raw_dataset.groupby('id')['x'].apply(len)
@@ -54,9 +55,19 @@ def describle_SSD(SDD_path):
     r = pd.concat(record, ignore_index = True)
     r.to_csv(SDD_path + "r.csv")
 
-def create_test_dataset(df, test_data_file, min_cooldown, max_cooldown):
-    new_df = pd.DataFrame()
+def create_test_dataset(raw_dataset_path, min_cooldown, max_cooldown):
+    file = os.path.join(raw_dataset_path, "rawdata_test.csv")
+    if not os.path.exists(file):
+        print("test data not unavaiable. Creating...")
+        split_train_validation_test(raw_dataset_path)
+    df = pd.read_csv(file)
     total_length = 3000
+    cols = []
+    for pid, group in df.groupby("id"):
+        cols.append(str(pid) + 'x')
+        cols.append(str(pid) + 'y')
+    new_df = pd.DataFrame(columns = cols)
+
     for pid, group in df.groupby("id"):
         trajectory_length = len(group)
         direction = 1
@@ -79,16 +90,18 @@ def create_test_dataset(df, test_data_file, min_cooldown, max_cooldown):
                 index += direction
                 cool_down = random.randint(min_cooldown, max_cooldown)
     new_df = new_df.set_index(pd.RangeIndex(start=-300, stop=-300 + len(new_df)))
-    new_df.to_csv(test_data_file + "dynamic_agents.csv")
+    new_df.to_csv(raw_dataset_path + "dynamic_agents.csv")
 
-def split_train_validation_test(raw_dataset_path, testSize = 0.1, validationSize = 0.2):
+def split_train_validation_test(raw_dataset_path, testSize = 0.2, validationSize = 0.2):
     raw_dataset = pd.read_csv(os.path.join(raw_dataset_path, "rawdata.csv"))
     raw_dataset = filter_length(raw_dataset, min_length = 10)
     print("xmin","xmax",raw_dataset.x.min(), raw_dataset.x.max(), raw_dataset.y.min(), raw_dataset.y.max())
 
     train_validation_id, test_id = train_test_split(raw_dataset.id.unique(), test_size= testSize, random_state = 42)
     test_raw_dataset = raw_dataset[raw_dataset.id.isin(test_id)]
-    create_test_dataset(test_raw_dataset, raw_dataset_path, min_cooldown=5, max_cooldown=20)
+    test_raw_dataset.to_csv(os.path.join(raw_dataset_path, "rawdata_test.csv"))
+
+    
 
     train_id, validation_id = train_test_split(train_validation_id, test_size = validationSize, random_state = 42)
     train_raw_dataset = raw_dataset[raw_dataset.id.isin(train_id)]
@@ -119,8 +132,10 @@ def preprocess_ETH(ETH_path, file):
     os.makedirs(raw_data_file_path, exist_ok=True)
     raw_dataset.to_csv(raw_data_file_path + "rawdata.csv")
     split_train_validation_test(raw_data_file_path)
+    return raw_dataset
 
 def preprocess_SSD(SDD_path, scene_name, scene_video_id, scales_yaml_content):
+    raw_data_file_path = "./test_data/SDD-{}-{}/".format(scene_name, scene_video_id)
     scale = scales_yaml_content[scene_name][scene_video_id]['scale']
     print(scale)
     file = os.path.join(SDD_path, scene_name, scene_video_id, "annotations.txt")
@@ -137,36 +152,34 @@ def preprocess_SSD(SDD_path, scene_name, scene_video_id, scales_yaml_content):
         n = int(30 / 2.5)  # for 30 fps to 2.5 fps
         agent = agent[agent['frame'] % n == 0]
         results.append(agent)
-    
     raw_dataset = pd.concat(results, ignore_index=True)
     raw_dataset = raw_dataset[["id", "x", "y"]]
     raw_dataset = reposition(raw_dataset)
-    raw_data_file_path = "./test_data/SDD-{}-{}/".format(scene_name, scene_video_id)
+
     os.makedirs(raw_data_file_path, exist_ok=True)
     raw_dataset.to_csv(raw_data_file_path + "rawdata.csv")
     split_train_validation_test(raw_data_file_path)
+    return raw_dataset
 
 def create_training_validation_dataset(raw_dataset_path, history_length, prediction_length):
     train_raw_dataset = pd.read_csv(raw_dataset_path + "rawdata_train.csv")
     validation_raw_dataset = pd.read_csv(raw_dataset_path + "rawdata_validation.csv")
-
     record = {"train_dataset": train_raw_dataset, "validation_dataset": validation_raw_dataset}
     for data_name, data in record.items():
         total_sequence_length = history_length + prediction_length
-        train_dataset = []
-        for pid, group in train_raw_dataset.groupby("id"):
+        output_dataset = []
+        for pid, group in data.groupby("id"):
             # timestamps = group["timestamp"].values
             x_values = group["x"].values
             y_values = group["y"].values
             for i in range(len(group) - total_sequence_length + 1):
-                # Extract the sequence and target
                 sequence = np.column_stack((x_values[i:i+history_length], y_values[i:i+history_length]))
                 target = np.column_stack((x_values[i+history_length:i+total_sequence_length], y_values[i+history_length:i+total_sequence_length]))
-                train_dataset.append((torch.tensor(sequence, dtype=torch.float32), torch.tensor(target, dtype=torch.float32)))
-        train_data_file = "history-{}-prediction-{}-{}.pkl".format(history_length, prediction_length, data_name)
-        train_data_file = os.path.join(raw_dataset_path, train_data_file)
-        with open(train_data_file , 'wb') as handle:
-            pickle.dump(train_dataset, handle, protocol=pickle.HIGHEST_PROTOCOL)
+                output_dataset.append((torch.tensor(sequence, dtype=torch.float32), torch.tensor(target, dtype=torch.float32)))
+        output_dataset_file = "history-{}-prediction-{}-{}.pkl".format(history_length, prediction_length, data_name)
+        output_dataset_file = os.path.join(raw_dataset_path, output_dataset_file)
+        with open(output_dataset_file , 'wb') as handle:
+            pickle.dump(output_dataset, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
 def load_dataset(data_path, data_name, history_length, prediction_length):
     filename = "history-{}-prediction-{}-{}.pkl".format(history_length, prediction_length, data_name)
@@ -180,21 +193,33 @@ def load_dataset(data_path, data_name, history_length, prediction_length):
     print(filename, "loaded")
     return training
 
+def plot_heat_map(data_path = "./test_data/"):
+    for scene in os.listdir(data_path):
+        file = os.path.join(data_path, scene, "rawdata.csv")
+        if not os.path.exists(file): continue
+        data = pd.read_csv(file)
+        plt.figure()
+        for agent_id in data.id.unique():
+            agent = data.loc[data.id == agent_id, :]
+            plt.plot(agent.x, agent.y)
+        plt.savefig(file.replace("rawdata.csv", "map.png"), dpi = 300,  transparent=True,  bbox_inches="tight")
+
 def preprocess_dataset():
-    preprocess_ETH( ETH_path = './OpenTraj/datasets/ETH/seq_eth/', file = 'obsmat.txt')
-    
+    ETH_path = './OpenTraj/datasets/ETH/seq_eth/'
+    preprocess_ETH(ETH_path, file = 'obsmat.txt')
     SDD_path = "./OpenTraj/datasets/SDD/"
-    scene_name = "deathCircle"
-    scene_video_id = "video0"
-    scaler_file = os.path.join(SDD_path, 'estimated_scales.yml')
-    with open(scaler_file, 'r') as hf:
-        scales_yaml_content = yaml.load(hf, Loader=yaml.FullLoader)
-    preprocess_SSD(SDD_path, scene_name, scene_video_id, scales_yaml_content)
+    for scene_name, scene_video_id in [('deathCircle', 'video1'), ('bookstore', 'video1'), ('hyang', 'video0')]:
+        scaler_file = os.path.join(SDD_path, 'estimated_scales.yml')
+        with open(scaler_file, 'r') as hf:
+            scales_yaml_content = yaml.load(hf, Loader=yaml.FullLoader)
+        preprocess_SSD(SDD_path, scene_name, scene_video_id, scales_yaml_content)
 
 if __name__ == "__main__":
-    preprocess_dataset()
+    # preprocess_dataset()
+    plot_heat_map(data_path = "./test_data/")
     # # raw_dataset_path = './test_data/SDD-deathCircle-video0/'
-    # raw_dataset_path = './test_data/ETH/'
+    raw_dataset_path = './test_data/ETH/'
+    create_test_dataset(raw_dataset_path, min_cooldown=5, max_cooldown=20)
     # history_length = 4
     # prediction_length = 4
     # create_training_validation_dataset(raw_dataset_path, history_length, prediction_length)
