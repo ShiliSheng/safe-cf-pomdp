@@ -162,8 +162,8 @@ class Model:
                         obs_nodes_reachable[(ws_node, oc)] = {frozenset(['obstacle']): 1.0}
                         observation_state_map_change_record.add(ws_node)
                         state_observation_map_change_record.add(ws_node)
-                        self.observation_state_map[ws_node] = [ws_node]
-                        self.state_observation_map[ws_node] = ws_node
+                        self.observation_state_map[ws_node] = [ws_node]     # 
+                        self.state_observation_map[ws_node] = ws_node       #
                         ws_obstacle = (ws_node, oc)
                         observation_obstacle.add(ws_obstacle)
 
@@ -465,7 +465,7 @@ def create_scenario_obstacle(minX, minY, maxX, maxY,
     state_observation_map = dict()
     for fx, fy in motion_mdp.nodes():
         if (fx, fy) in obstacles:
-            state_observation_map[(fx, fy)] = (fx, fy)
+            state_observation_map[(fx, fy)] = (fx, fy) 
         if (fx, fy) in targets:
             state_observation_map[(fx, fy)] = (10000007, 10000007)
         else:
@@ -502,19 +502,27 @@ def create_scenario(scene):
 
     if scene == 'SDD-bookstore-video1':
         minX, minY, maxX, maxY = 0, 0, 60, 60
-        initial_belief_support = [(0, 0)]
-        targets = set([(maxX, minY)])
+        initial_belief_support = [(12, 60)]
+        targets = set([(60, 0), (59, 0), (60,1), (59, 1)])
         end_states = set(list(targets))
         obstacles = set()
         for x in range(3, 8, 1):
             for y in range(3, 8, 1):
                 obstacles.add((x, y))
-            for y in range(30, 38, 1):
+            for y in range(25, 34, 1):
                 obstacles.add((x, y))
         for x in range(0, 8, 1):
             for y in range(40, 60+1, 1):
                 obstacles.add((x, y))
-        obstacles = set()
+        
+        for y in range(8, 60, 8):
+            end = 45 if y < 40 else 60
+            for x in range(25, end + 1):
+                obstacles.add((x, y))
+
+        for y in range(56, 61):
+            for x in range(25, 61):
+                obstacles.add((x, y))
         preferred_actions = [1, 2]
 
     pomdp = create_scenario_obstacle(minX, minY, maxX, maxY, 
