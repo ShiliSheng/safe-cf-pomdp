@@ -281,7 +281,7 @@ def compute_accept_states(mdp, obstacle, target):
     Sn = reachable_set.difference(obstacle)
     S_f = []
     S_fi = []
-    MEC, Act = find_MECs(mdp, Sn)
+    MEC, Act = find_SCCs(mdp, Sn)
     for T in MEC:
         common = set(T.intersection(target))
         if common:
@@ -291,7 +291,10 @@ def compute_accept_states(mdp, obstacle, target):
             if len(T) == 1:  # self-loop
                 common_cp = common.copy()
                 s = common_cp.pop()
-                loop_act_set = set(mdp[s][s]['prop'].keys())
+                if not mdp[s][s]['prop'].keys():
+                    loop_act_set = set(mdp[s][s]['prop'].keys())
+                else:
+                    loop_act_set = set()
                 loop_act = dict()
                 loop_act[s] = loop_act_set
                 S_fi.append([T, common, loop_act])
