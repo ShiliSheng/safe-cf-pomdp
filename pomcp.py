@@ -8,6 +8,8 @@ import time
 import math
 import random
 from model import Model
+from model import create_scenario
+
 from predictor import Predictor
 from collections import defaultdict
 import pandas as pd
@@ -287,7 +289,7 @@ class POMCP:
     #     return True
 
     def get_default_action(self):
-        return actions[0]
+        return self.pompd.actions[0]
 
     def select_action(self):
         distableTrue = False
@@ -561,149 +563,42 @@ class POMCP:
                 self.action2Index[action] = i
         return self.action2Index.get(action, -1)
 
+def replay():
+    pkl_file = 'results/Obstacle-SDD-bookstore-video1-0-0-60-60/shield_1-lookback_4-prediction_5-failure-0.1-agents-10-2024-01-14-11-47/Episode-0.pkl'
+    # with open(pkl_file, 'rb') as file:
+    #     data = pickle.load(file)
+    # step = -1
+    # for d in data:
+    #     if d.get("Action Step", - 1) == 56:
+    #         step = d
+    #         break
+    # # print(step_info)
+    # belief_support = step["Belief States"]
+    # belief = {state: 1/len(belief_support) for state in belief_support}
+    pomdp = create_scenario('ETH')
+    # pomdp.initial_belief = belief
 
-# def get_cf_score(dynamic_agents, cur_time, estimation):
-#     values = dynamic_agents.loc[cur_time,:].values[2:]
-#     return np.linalg.norm(values - estimation)
-#     # score = 0
-    # num_agents = get_num_agents(dynamic_agents)
-    # for i in range(2, num_agents, 2):
-    #     score += (dynamic_agents.loc[cur_time, ] - B[i][0]) ** 2 + (A[i][1] - B[i][0]) ** 2
-    # return score ** (0.5)
+    # estimation_moving_agents_cur = step["Dynamic Agents Prediction"]
+    # constraints_cur_1 = step["Estimated Regions"]
+    # H = step["Predict Horizon"]
+    # safe_distance = step["Safe Distance"]
+    # state_ground_truth = step["Robot State"]
 
-def compute_prediction_error(A, B):
-    N = len(A)
-    distance = 0
-    for i in range(0, N, 2):
-        distance = (A[i] - B[i]) ** 2 + (A[i+1] - B[i+1]) ** 2
-    distance = distance ** 0.5 / N
-    # distance = np.linalg.norm(A - B)
-    # print("distance",distance)
-    return distance
+    # ACP_step = pomdp.build_restrictive_region(estimation_moving_agents_cur, constraints_cur_1, H, safe_distance)
+    # print(ACP_step)
+    # print(pomdp.obstacles)
+    pomcp = POMCP(pomdp, 0, 3, 0)
+    pomcp.reset_root()
+    pomcp.select_action()
+    print(pomcp.R_min, pomcp.R_max)
+    # obs_current_node = pomcp.get_observation(state_ground_truth)
+    # motion_mdp, AccStates = pomcp.pomdp.compute_accepting_states() 
+    # observation_successor_map = pomcp.pomdp.compute_H_step_space(H)
 
+    # obs_mdp, Winning_obs, A_valid, observation_state_map_change_record, state_observation_map_change_record  \
+    #                 = pomcp.pomdp.online_compute_winning_region(obs_current_node, AccStates, observation_successor_map, H, ACP_step)
+    
+    print()
+    #shieldLevel = 0, shieldHorizon = 5,  constant = 10, maxDepth = 100, numSimulations = 2 ** 12):
 if __name__ == "__main__":
-    #Settings for LSTM trajectory prediction
-    prediction_model = Predictor()
-    prediction_model.load_model('./OpenTraj/datasets/ETH/seq_eth/model_weights.pth')
-    history_length = prediction_model.history_length
-    H = prediction_length = prediction_model.prediction_length
-
-    # POMDP
-    U = actions = ['N', 'S', 'E', 'W', 'ST']
-    C = cost = [-1, -1, -1, -1, -1]
-
-    transition_prob = [[] for _ in range(len(actions))]
-    transition_prob[0] = [0.1, 0.8, 0.1] # S
-    transition_prob[1] = [0.1, 0.8, 0.1] # N
-    transition_prob[2] = [0.1, 0.8, 0.1] # E
-    transition_prob[3] = [0.1, 0.8, 0.1] # W
-    transition_prob[4] = [1]             # ST
-
-    WS_transition = [[] for _ in range(len(actions))]
-    WS_transition[0] = [(-2, 2), (0, 2), (2, 2)]       # S
-    WS_transition[1] = [(-2, -2), (0, -2), (2, -2)]    # N
-    WS_transition[2] = [(2, -2), (2, 0), (2, 2)]       # E
-    WS_transition[3] = [(-2, -2), (-2, 0), (-2, 2)]    # W
-    WS_transition[4] = [(0, 0)]                         # ST
-    obstacles = []
-    # obstacles =  [(1, 5)]
-    target = [(17, 17), (17, 19), (19, 17), (19, 19)]
-    end_states = set(target)
-    state_reward = defaultdict(int)
-    for state in target:
-        pass
-    state_reward[(17, 19)] = 10000
-
-    robot_nodes = set()
-    for i in range(1, 20, 2):
-        for j in range(1, 20, 2):
-            node = (i, j)
-            robot_nodes.add(node) 
-
-    initial_belief_support = [(3,3)]
-    initial_belief = {}
-    for state in initial_belief_support:
-        initial_belief[state] = 1 / len(initial_belief_support)
-
-    shieldLevel = 1
-    pomdp = Model(robot_nodes, actions, cost, WS_transition, transition_prob,
-                     initial_belief, obstacles, target, end_states, state_reward)
-
-    pomcp = POMCP(pomdp, shieldLevel, prediction_model.prediction_length, end_states)
-
-    motion_mdp, AccStates = pomcp.pomdp.compute_accepting_states() 
-    pomcp.pomdp.set_states_observations(motion_mdp)
-    observation_successor_map = pomcp.pomdp.compute_H_step_space(motion_mdp, H)
-    step = 0
-
-    num_episodes = 1
-    max_steps = 100
-
-    # Settings for conformal prediction
-    path = "./OpenTraj/datasets/ETH/seq_eth/"
-    dynamic_agents =  pd.read_csv(path + "test_dynammic_agents_1.csv", index_col=0)
-    starting_col_index = 0 # in the dataframe, where is the starting col of values
-
-    # print(dynamic_agents.head())
-    #           agent1, anget2  angentN
-    # t=0       (x,y)       .        .
-    # ...           .       .        .  
-    # t=inf         .       .       (x,y)
-    num_agents_tracked = len(dynamic_agents.columns) // 2 
-    target_failure_prob_delta = 0.1
-    acp_learing_gamma = 0.08
-    failure_prob_delta = [[0] * (H+1) for _ in range(max_steps + 10)]
-    error = [[0] * (H+1) for _ in range(max_steps + 10)]
-    constraints = [[0] * (H+1) for _ in range(max_steps + 10)]    
-    estimation_moving_agents = [[0 for _ in range(num_agents_tracked * 2)] * (H+1) for _ in range(max_steps + 10)] 
-    # cf_scores = [[0] * (H+1) for _ in range(max_steps + 10)]
-    cf_scores = defaultdict(lambda: SortedList([float('inf')]))
-
-    for tau in range(1, H + 1):
-        failure_prob_delta[0][tau] = target_failure_prob_delta
-
-
-    max_steps = 100
-    for _ in range(num_episodes):
-        pomcp.reset_root()
-        state_ground_truth = pomcp.root.sample_state_from_belief()
-        print(state_ground_truth, "current state")
-        # obs_current_node = pomcp.get_observation(state_ground_truth)
-        print("current observation", obs_current_node)
-        cur_time = -1
-        discounted_reward = 0
-        undiscounted_reward = 0
-        while cur_time < max_steps and state_ground_truth not in pomcp.pomdp.end_states:
-            cur_time += 1
-            estimations = [[], [], []]
-            ACP_step = pomcp.pomdp.build_restrictive_region(estimations, 1, H)
-            # ACP_step = [[] for _ in range(H+1)]
-
-            obs_current_node = pomcp.get_observation(state_ground_truth)
-            obs_mdp, Winning_observation = pomcp.pomdp.online_compute_winning_region(obs_current_node, AccStates, observation_successor_map, H, ACP_step)
-            
-            actionIndex = pomcp.select_action()
-            next_state_ground_truth = pomcp.step(state_ground_truth, actionIndex)
-            reward = pomcp.step_reward(state_ground_truth, actionIndex)
-
-            fig, ax = plt.subplots()                
-            plt.xlim(0, 22)
-            plt.ylim(0, 22)
-            # circle = patches.Circle(state_ground_truth, radius=0.5, edgecolor='black', facecolor='none')
-            # ax.add_patch(circle)
-
-            plt.scatter(state_ground_truth[0], state_ground_truth[1], marker = '*', color = "black")
-            for (x, y) in pomcp.root.belief:
-                plt.scatter(x, y, marker = '*', alpha=0.5, color = "black")
-            plt.title("Time: {}, Action: {}".format(cur_time, actions[actionIndex]))
-            plt.savefig("./figures/test_pomcp/figure_{}.jpg".format(str(cur_time).zfill(3)), dpi=300)
-            plt.close()
-            pomcp.update(actionIndex, obs_current_node)
-            state_ground_truth = next_state_ground_truth
-            discounted_reward += pomcp.gamma * reward
-            undiscounted_reward += reward
-            print("=====step", cur_time, "s", "action", actions[actionIndex], state_ground_truth, "s'", next_state_ground_truth,
-                    "observation", obs_current_node, pomcp.root.belief, undiscounted_reward)
-        image_files = sorted([f for f in os.listdir('./figures/test_pomcp/') if f.endswith('.jpg')])
-        images = [Image.open(os.path.join('./figures/test_pomcp/', f)) for f in image_files]
-        imageio.mimsave('./data/pomcp_output.gif', images, duration=0.5)  # 设置每帧之间的时间间隔（单位：秒）
+    pass
