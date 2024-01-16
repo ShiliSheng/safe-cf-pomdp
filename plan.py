@@ -9,6 +9,7 @@ import math
 import copy
 import random
 from analysis import plot_figure_from_data
+from preprocess import create_test_dataset
 from model import create_scenario
 from model import Model
 from predictor import Predictor
@@ -47,6 +48,8 @@ def test(scene, shieldLevel, target_failure_prob_delta, prediction_length, histo
     H = prediction_length = prediction_model.prediction_length
 
     # Settings for conformal prediction
+    if not os.path.exists(test_data_path + "dynamic_agents.csv"):
+        create_test_dataset(test_data_path, min_cooldown=5, max_cooldown=20)
     test_dataset =  pd.read_csv(test_data_path + "dynamic_agents.csv", index_col = 0)
     starting_col_index = 0 # in the dataframe, where is the starting col of values
     # target_failure_prob_delta
