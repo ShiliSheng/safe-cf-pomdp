@@ -1,4 +1,5 @@
 import pandas as pd
+import shutil
 import pickle
 import numpy as np
 import os
@@ -202,7 +203,8 @@ def plot_heat_map(data_path = "./test_data/"):
         for agent_id in data.id.unique():
             agent = data.loc[data.id == agent_id, :]
             plt.plot(agent.x, agent.y)
-        plt.savefig(file.replace("rawdata.csv", "map.png"), dpi = 300,  transparent=True,  bbox_inches="tight")
+        plt.gca().set_aspect('equal', adjustable='box')
+        plt.savefig(file.replace("rawdata.csv", "trajectories.png"), dpi = 300,  transparent=True,  bbox_inches="tight")
 
 def preprocess_dataset():
     ETH_path = './OpenTraj/datasets/ETH/seq_eth/'
@@ -214,12 +216,31 @@ def preprocess_dataset():
             scales_yaml_content = yaml.load(hf, Loader=yaml.FullLoader)
         preprocess_SSD(SDD_path, scene_name, scene_video_id, scales_yaml_content)
 
+def copy_and_rename_reference_images(folder_path, destination_path = "./OpenTraj/datasets/SDD/refs/"):
+    # Iterate through all subdirectories
+    for root, dirs, files in os.walk(folder_path):
+        # Check if "reference.jpg" is in the files list
+        if "reference.jpg" in files:
+            # Get the absolute path of the reference image
+            reference_path = os.path.join(root, "reference.jpg")
+
+            # # Extract information from the original path
+            new_name = "-".join(reference_path.split("/")).replace(".","") + ".jpg"
+            
+            # # Create a new name based on the original path
+            # new_name = f"reference_{os.path.basename(original_folder)}_{original_filename}"
+            
+            # Copy and rename the file
+            new_path = os.path.join(destination_path, new_name)
+            if not os.path.exists(new_path): os.path.mkdir(new_path)
+            shutil.copy(reference_path, new_path)
+
 if __name__ == "__main__":
     # preprocess_dataset()
     plot_heat_map(data_path = "./test_data/")
     # # raw_dataset_path = './test_data/SDD-deathCircle-video0/'
-    raw_dataset_path = './test_data/ETH/'
-    create_test_dataset(raw_dataset_path, min_cooldown=5, max_cooldown=20)
+    # raw_dataset_path = './test_data/ETH/'
+    # create_test_dataset(raw_dataset_path, min_cooldown=5, max_cooldown=20)
     # history_length = 4
     # prediction_length = 4
     # create_training_validation_dataset(raw_dataset_path, history_length, prediction_length)
