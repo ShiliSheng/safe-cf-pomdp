@@ -130,6 +130,9 @@ class Model:
         self.motion_mdp = motion_mdp
         return motion_mdp, AccStates
         
+    def check_winning(self, state, oc):
+        return True
+
     def online_compute_winning_region(self, obs_initial_node, AccStates, observation_successor_map, H, ACP, dfa = []):
         #--------------ONLINE-------------------------
         # Build the N-step reachable support belief MDP, the target set for the support belief MDP is given by AccStates (which is computed offline)
@@ -165,23 +168,17 @@ class Model:
                         state_observation_map_change_record.add(ws_node)
                         self.observation_state_map[ws_node] = [ws_node]     # 
                         self.state_observation_map[ws_node] = ws_node       #
-
                         # (0, 0) => (3, 3)
                         # (10, 10)  => (13, 13)
-
                         # (0, 0, 1)  safe => (3, 3, 1), (3, 3, 1) should be in winning obs
                         # state = (0, 0), obs = (3, 3), oc = 1, obs_oc = (3,3,1), check state_oc in winning or not
-                        # state(0, 0), oc = 1, state_oc = (0, 0, 1), obs_oc = (3, 3, 1)
-
+                        # state(0, 0), oc = 1, state_oc = (0, 0, 1) => obs_oc = (3, 3, 1), winning or not
                         # (0, 0, 2) safe => (3, 3, 2), (3, 3, 2) should be in winning obs
-                        
                         # (10, 10, 1) safe => (10, 10, 1): (13, 13, 1) should be in winnnning obs
                         # (10, 10, 2) unsafe => (10, 10, 2): (10, 10, 2) should not be in winning obs
-
                         # state:  (10, 10, 1) => obs:(10, 10, 1)
                         # state, oc => obs => winning
-                        # self.winning_state_observation_map[(ws_node, oc)] = (ws_node, oc)
-
+                        self.winning_state_observation_map[(ws_node, oc)] = (ws_node, oc)
                         ws_obstacle = (ws_node, oc)
                         observation_obstacle.add(ws_obstacle)
 
