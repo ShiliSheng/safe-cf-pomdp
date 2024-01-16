@@ -95,7 +95,7 @@ def create_test_dataset(raw_dataset_path, min_cooldown, max_cooldown):
 
 def split_train_validation_test(raw_dataset_path, testSize = 0.2, validationSize = 0.2):
     if not os.path.exists(os.path.join(raw_dataset_path, "rawdata.csv")): preprocess_dataset()
-    preprocess_dataset()
+    # preprocess_dataset()
     raw_dataset = pd.read_csv(os.path.join(raw_dataset_path, "rawdata.csv"))
     raw_dataset = filter_length(raw_dataset, min_length = 10)
     print("xmin","xmax",raw_dataset.x.min(), raw_dataset.x.max(), raw_dataset.y.min(), raw_dataset.y.max())
