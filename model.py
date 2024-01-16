@@ -121,7 +121,7 @@ class Model:
         print('Number of satisfying states: %s' % len(AccStates))
         # print(AccStates)
 
-        f_accept_node = open('pomdp_states/accept_node.dat','w')
+        f_accept_node = open('./pomdp_states/accept_node.dat','w')
         for nd_id, nd in enumerate(AccStates):
             #print(nd)
             #(ts_node_x, ts_node_y)
@@ -245,7 +245,7 @@ class Model:
             A_valid[s].difference_update(U_to_remove)
         print('Number of winning states in observation space: %s' % len(Winning_obs))
 
-        f_accept_observation = open('pomdp_states/accept_observation.dat','w')
+        f_accept_observation = open('./pomdp_states/accept_observation.dat','w')
         for nd_id, nd in enumerate(Winning_obs):
             # ts_node_id, ts_node_x, ts_node_y, ts_node_d
             f_accept_observation.write('%s,%s,%s\n' %(nd[0], nd[1], A_valid[nd]))
