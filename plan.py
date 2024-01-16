@@ -292,7 +292,7 @@ if __name__ == "__main__":
 
     scene2 = 'SDD-bookstore-video1'
     test(scene= scene2, shieldLevel = 1, target_failure_prob_delta = 0.1, prediction_length = 5,
-                history_length = 4,  num_agents_tracked = 10, num_episodes = 1, max_steps = 200, explore_constant = 250,
+                history_length = 4,  num_agents_tracked = 2, num_episodes = 1, max_steps = 200, explore_constant = 250,
                 plot_along = True, 
                 )
 

@@ -121,12 +121,12 @@ class Model:
         print('Number of satisfying states: %s' % len(AccStates))
         # print(AccStates)
 
-        f_accept_node = open('./pomdp_states/accept_node.dat','w')
-        for nd_id, nd in enumerate(AccStates):
-            #print(nd)
-            #(ts_node_x, ts_node_y)
-            f_accept_node.write('%s,%s\n' %(nd[0], nd[1]))
-        f_accept_node.close()
+        # f_accept_node = open('./pomdp_states/accept_node.dat','w')
+        # for nd_id, nd in enumerate(AccStates):
+        #     #print(nd)
+        #     #(ts_node_x, ts_node_y)
+        #     f_accept_node.write('%s,%s\n' %(nd[0], nd[1]))
+        # f_accept_node.close()
         self.motion_mdp = motion_mdp
         return motion_mdp, AccStates
         
@@ -346,7 +346,7 @@ class Model:
             # plt.scatter(x, y, marker = 's', alpha = 1, color = "red")
         
         figure_path = os.path.join("./results/", model_name )
-        if not os.path.exists(figure_file): os.makedirs(figure_file)
+        if not os.path.exists(figure_path): os.makedirs(figure_path)
         figure_file = os.path.join(figure_path, "map.png")
         plt.savefig(figure_file,  transparent=True,  bbox_inches = "tight", dpi = 300) 
         if show_figure: plt.show()
@@ -381,34 +381,6 @@ class Model:
         return ACP
 
 
-    # def set_transition_prob(self):
-        for fnode in self.robot_nodes: 
-            for actionIndex, action in enumerate(self.actions):
-                u = self.actions[actionIndex]
-                c = self.cost[actionIndex]
-                cumulative_prob = 0
-                succ_set = dict()
-                n_next_positions = len(self.transiton[actionIndex])
-                for i in range(n_next_positions):
-                    dx, dy = self.transiton[actionIndex][i]
-                    prob = self.transition_prob[actionIndex][i]
-                    tnode = (fnode[0] + dx, fnode[1] + dy)
-                    if tnode in self.robot_nodes:
-                        cumulative_prob += prob
-                        self.robot_edges[(fnode, u, tnode)] = (prob, c)
-                        succ_prop = {tnode: prob}
-                        succ_set.update(succ_prop)
-                if not succ_set:     # if no successor, stay the same state
-                    succ_set[fnode] = 1
-                else:                # make prob sum to 1
-                    for tnode in succ_set:
-                        succ_set[tnode] += (1 - cumulative_prob) / len(succ_set)
-                if fnode not in self.state_action_reward_map: self.state_action_reward_map[fnode] = {}
-                self.state_action_reward_map[fnode][actionIndex] = c
-                if fnode not in self.robot_state_action_map: self.robot_state_action_map[fnode] = {}
-                self.robot_state_action_map[fnode][actionIndex] = succ_set
-                self.state_tra[actionIndex][fnode] = succ_set
-  
 def compute_dfa():
     #----compute DFA----
     #reach_avoid = '! obstacle U target'

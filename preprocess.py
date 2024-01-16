@@ -94,6 +94,8 @@ def create_test_dataset(raw_dataset_path, min_cooldown, max_cooldown):
     new_df.to_csv(raw_dataset_path + "dynamic_agents.csv")
 
 def split_train_validation_test(raw_dataset_path, testSize = 0.2, validationSize = 0.2):
+    if not os.path.exists(os.path.join(raw_dataset_path, "rawdata.csv")): preprocess_dataset()
+    preprocess_dataset()
     raw_dataset = pd.read_csv(os.path.join(raw_dataset_path, "rawdata.csv"))
     raw_dataset = filter_length(raw_dataset, min_length = 10)
     print("xmin","xmax",raw_dataset.x.min(), raw_dataset.x.max(), raw_dataset.y.min(), raw_dataset.y.max())
@@ -101,8 +103,6 @@ def split_train_validation_test(raw_dataset_path, testSize = 0.2, validationSize
     train_validation_id, test_id = train_test_split(raw_dataset.id.unique(), test_size= testSize, random_state = 42)
     test_raw_dataset = raw_dataset[raw_dataset.id.isin(test_id)]
     test_raw_dataset.to_csv(os.path.join(raw_dataset_path, "rawdata_test.csv"))
-
-    
 
     train_id, validation_id = train_test_split(train_validation_id, test_size = validationSize, random_state = 42)
     train_raw_dataset = raw_dataset[raw_dataset.id.isin(train_id)]
@@ -163,6 +163,7 @@ def preprocess_SSD(SDD_path, scene_name, scene_video_id, scales_yaml_content):
     return raw_dataset
 
 def create_training_validation_dataset(raw_dataset_path, history_length, prediction_length):
+    if not os.path.exists(raw_dataset_path + "rawdata_train.csv"): split_train_validation_test(raw_dataset_path)
     train_raw_dataset = pd.read_csv(raw_dataset_path + "rawdata_train.csv")
     validation_raw_dataset = pd.read_csv(raw_dataset_path + "rawdata_validation.csv")
     record = {"train_dataset": train_raw_dataset, "validation_dataset": validation_raw_dataset}
@@ -236,8 +237,8 @@ def copy_and_rename_reference_images(folder_path, destination_path = "./OpenTraj
             shutil.copy(reference_path, new_path)
 
 if __name__ == "__main__":
-    # preprocess_dataset()
-    plot_heat_map(data_path = "./test_data/")
+    preprocess_dataset()
+    # plot_heat_map(data_path = "./test_data/")
     # # raw_dataset_path = './test_data/SDD-deathCircle-video0/'
     # raw_dataset_path = './test_data/ETH/'
     # create_test_dataset(raw_dataset_path, min_cooldown=5, max_cooldown=20)
