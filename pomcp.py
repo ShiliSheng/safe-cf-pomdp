@@ -565,40 +565,65 @@ class POMCP:
 
 def replay():
     pkl_file = 'results/Obstacle-SDD-bookstore-video1-0-0-60-60/shield_1-lookback_4-prediction_5-failure-0.1-agents-10-2024-01-14-11-47/Episode-0.pkl'
-    # with open(pkl_file, 'rb') as file:
-    #     data = pickle.load(file)
-    # step = -1
-    # for d in data:
-    #     if d.get("Action Step", - 1) == 56:
-    #         step = d
-    #         break
-    # # print(step_info)
-    # belief_support = step["Belief States"]
-    # belief = {state: 1/len(belief_support) for state in belief_support}
-    pomdp = create_scenario('ETH')
-    # pomdp.initial_belief = belief
-
-    # estimation_moving_agents_cur = step["Dynamic Agents Prediction"]
-    # constraints_cur_1 = step["Estimated Regions"]
-    # H = step["Predict Horizon"]
-    # safe_distance = step["Safe Distance"]
-    # state_ground_truth = step["Robot State"]
-
-    # ACP_step = pomdp.build_restrictive_region(estimation_moving_agents_cur, constraints_cur_1, H, safe_distance)
-    # print(ACP_step)
-    # print(pomdp.obstacles)
-    pomcp = POMCP(pomdp, 0, 3, 0)
-    pomcp.reset_root()
-    pomcp.select_action()
-    print(pomcp.R_min, pomcp.R_max)
-    # obs_current_node = pomcp.get_observation(state_ground_truth)
-    # motion_mdp, AccStates = pomcp.pomdp.compute_accepting_states() 
-    # observation_successor_map = pomcp.pomdp.compute_H_step_space(H)
-
-    # obs_mdp, Winning_obs, A_valid, observation_state_map_change_record, state_observation_map_change_record  \
-    #                 = pomcp.pomdp.online_compute_winning_region(obs_current_node, AccStates, observation_successor_map, H, ACP_step)
+    with open(pkl_file, 'rb') as file:
+        data = pickle.load(file)
+    step = -1
+    question_step = 146
+    for d in data:
+        if d.get("Action Step", - 1) == question_step:
+            step = d
+            break
     
-    print()
+    belief_support = step["Belief States"]
+    belief = {state: 1/len(belief_support) for state in belief_support}
+
+    scene = 'SDD-bookstore-video1'
+    
+    pomdp = create_scenario(scene)
+    pomdp.initial_belief = belief
+
+    estimation_moving_agents_cur = step["Dynamic Agents Prediction"]
+    constraints_cur_1 = step["Estimated Regions"]
+    H = step["Predict Horizon"]
+    safe_distance = step["Safe Distance"]
+    state_ground_truth = step["Robot State"]
+    shield_level = step["Shield Level"]
+    disallowed = step["Disallowed Actions"]
+    # print("disallowed", disallowed, state_ground_truth, shield_level)
+    pomcp = POMCP(pomdp, shield_level, H,  constant = 250)
+
+    ACP_step = pomdp.build_restrictive_region(estimation_moving_agents_cur, constraints_cur_1, H, safe_distance)
+    obs_current_node = pomcp.get_observation(state_ground_truth)
+    motion_mdp, AccStates = pomcp.pomdp.compute_accepting_states() 
+    observation_successor_map = pomcp.pomdp.compute_H_step_space(H)
+    obs_mdp, Winning_obs, A_valid, observation_state_map_change_record, state_observation_map_change_record  \
+                    = pomcp.pomdp.online_compute_winning_region(obs_current_node, AccStates, observation_successor_map, H, ACP_step)
+
+    # print(ACP_step)
+    # print(constraints_cur_1)
+
+    a, b = state_ground_truth
+    for h in ACP_step:
+        # if h > 1: break
+        for x, y in ACP_step[h]:
+            dis = ((x-a) ** 2 + (y - b) ** 2) ** 0.5
+            if dis < constraints_cur_1[h] + safe_distance:
+                print(h, (x, y), (a, b), dis, constraints_cur_1[h], safe_distance)
+    # # print(pomdp.obstacles)
+    # # pomcp = POMCP(pomdp, 0, 3, 0)
+    # pomcp.reset_root()
+    # pomcp.select_action()
+    # print(pomcp.root.illegalActionIndexes)
+    # for state in pomcp.root.belief:
+    #     for nxt in pomcp.pomdp.robot_state_action_map[state][2]:
+    #         # print(nxt)
+    #         for h in ACP_step:
+    #             if nxt in ACP_step[h]:
+    #                 print(state_ground_truth, state, nxt, h,  "should be shilded")
+    # print()
+    # print(pomcp.R_min, pomcp.R_max)
+    
     #shieldLevel = 0, shieldHorizon = 5,  constant = 10, maxDepth = 100, numSimulations = 2 ** 12):
 if __name__ == "__main__":
+    replay()
     pass
