@@ -127,6 +127,7 @@ class Predictor():
         self.model = LSTMModel(self.input_size, self.hidden_size, self.output_size * self.prediction_length)
         self.model.load_state_dict(loaded_model['state_dict'])
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.model.to(self.device)
         
     def predict_case(self, x):
         self.model.eval()
