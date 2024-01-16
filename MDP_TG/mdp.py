@@ -8,6 +8,8 @@ from networkx.algorithms import shortest_path
 import random
 
 # ----------------------------------
+def print(*args, **kwargs):
+    return
 
 new_var = DiGraph
 class Motion_MDP_label(new_var):
@@ -212,7 +214,8 @@ def find_MECs(mdp, Sneg):
             print("SubGraph of one MEC: %s states and %s edges" % (
                 str(len(simple_digraph.nodes())), str(len(simple_digraph.edges()))))
             i = 0
-            for Scc in strongly_connected_components_recursive(simple_digraph):
+            
+            for Scc in strongly_connected_components(simple_digraph):
                 i += 1
                 if (len(Scc) >= 1):
                     for s in Scc:
@@ -235,7 +238,7 @@ def find_MECs(mdp, Sneg):
                         if not A[f]:
                             R.add(f)
             j = 0
-            for Scc in strongly_connected_components_recursive(simple_digraph):
+            for Scc in strongly_connected_components(simple_digraph):
                 j += 1
                 if (len(Scc) >= 1):
                     common = set(Scc).intersection(T_temp)

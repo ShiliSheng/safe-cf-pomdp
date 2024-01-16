@@ -9,7 +9,8 @@ from .ltl2dra import parse_dra, run_ltl2dra
 
 
 from .lp import act_by_plan, rd_act_by_plan
-
+def print(*args, **kwargs):
+    return
 # ----------------------------------------------------------------------
 # ----------------------------------------------------------------------
 class Dfa(DiGraph):
