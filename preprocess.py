@@ -136,6 +136,7 @@ def preprocess_ETH(ETH_path, file):
     return raw_dataset
 
 def preprocess_SSD(SDD_path, scene_name, scene_video_id, scales_yaml_content):
+    print("processing", SDD_path)
     raw_data_file_path = "./test_data/SDD-{}-{}/".format(scene_name, scene_video_id)
     scale = scales_yaml_content[scene_name][scene_video_id]['scale']
     print(scale)
