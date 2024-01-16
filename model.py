@@ -134,6 +134,7 @@ class Model:
         #--------------ONLINE-------------------------
         # Build the N-step reachable support belief MDP, the target set for the support belief MDP is given by AccStates (which is computed offline)
         # ACP_step: computed adaptive conformal prediction constraints
+        # self.winning_state_observation_map = {}
         U = self.actions
         C = self.cost
         obstacle_static = set(self.obstacles)
@@ -164,6 +165,23 @@ class Model:
                         state_observation_map_change_record.add(ws_node)
                         self.observation_state_map[ws_node] = [ws_node]     # 
                         self.state_observation_map[ws_node] = ws_node       #
+
+                        # (0, 0) => (3, 3)
+                        # (10, 10)  => (13, 13)
+
+                        # (0, 0, 1)  safe => (3, 3, 1), (3, 3, 1) should be in winning obs
+                        # state = (0, 0), obs = (3, 3), oc = 1, obs_oc = (3,3,1), check state_oc in winning or not
+                        # state(0, 0), oc = 1, state_oc = (0, 0, 1), obs_oc = (3, 3, 1)
+
+                        # (0, 0, 2) safe => (3, 3, 2), (3, 3, 2) should be in winning obs
+                        
+                        # (10, 10, 1) safe => (10, 10, 1): (13, 13, 1) should be in winnnning obs
+                        # (10, 10, 2) unsafe => (10, 10, 2): (10, 10, 2) should not be in winning obs
+
+                        # state:  (10, 10, 1) => obs:(10, 10, 1)
+                        # state, oc => obs => winning
+                        # self.winning_state_observation_map[(ws_node, oc)] = (ws_node, oc)
+
                         ws_obstacle = (ws_node, oc)
                         observation_obstacle.add(ws_obstacle)
 
@@ -286,6 +304,7 @@ class Model:
         self.state_observation_map = copy.deepcopy(self.state_observation_map_default)
 
     def write_model(self):
+        if os.path.exists("./pomdp_states/"): os.mkdir("./pomdp_states/")
         file = open('./pomdp_states/state_trainsiton.dat','w')
         for state in self.robot_state_action_map:
             for actionIndex in self.robot_state_action_map[state]:
@@ -302,7 +321,7 @@ class Model:
             file.write('%s,%s\n' %(obs, states))
         file.close()
    
-    def plot_map(self):
+    def plot_map(self, show_figure = False):
         minX, minY, maxX, maxY = self.minX, self.minY, self.maxX, self.maxY
         belief = self.initial_belief_support
         targets = self.targets
@@ -327,11 +346,11 @@ class Model:
             # plt.scatter(x, y, marker = 's', alpha = 1, color = "red")
         
         figure_path = os.path.join("./results/", model_name )
-        if not os.path.exists(figure_path):
-            os.makedirs(figure_path)
+        if not os.path.exists(figure_file): os.makedirs(figure_file)
         figure_file = os.path.join(figure_path, "map.png")
         plt.savefig(figure_file,  transparent=True,  bbox_inches = "tight", dpi = 300) 
-        plt.show()
+        if show_figure: plt.show()
+
     def find_next_states(self, state):
         queue = collections.deque([state])
         visited = set([state])
@@ -501,9 +520,10 @@ def create_scenario(scene):
         preferred_actions = [0, 2]
 
     if scene == 'SDD-bookstore-video1':
-        minX, minY, maxX, maxY = 0, 0, 60, 60
-        initial_belief_support = [(12, 60)]
-        targets = set([(60, 0), (59, 0), (60,1), (59, 1)])
+        minX, minY, maxX, maxY = 0, 0, 80, 80
+        preferred_actions = [1, 2]
+        initial_belief_support = [(12, maxY)]
+        targets = set([(maxX, 0), (maxX - 1, 0), (maxX, 1), (maxX - 1, 1)])
         end_states = set(list(targets))
         obstacles = set()
         for x in range(3, 8, 1):
@@ -512,19 +532,48 @@ def create_scenario(scene):
             for y in range(25, 34, 1):
                 obstacles.add((x, y))
         for x in range(0, 8, 1):
-            for y in range(40, 60+1, 1):
+            for y in range(40, maxY+1, 1):
                 obstacles.add((x, y))
         
-        for y in range(8, 60, 8):
-            end = 45 if y < 40 else 60
+        for y in range(8, maxY, 8):
+            end = 65 if y < 80 else maxX
             for x in range(25, end + 1):
                 obstacles.add((x, y))
 
-        for y in range(56, 61):
-            for x in range(25, 61):
+        for y in range(maxY - 8, maxY + 1):
+            for x in range(25, maxX + 1):
                 obstacles.add((x, y))
-        preferred_actions = [1, 2]
 
+    if scene == 'SDD-deathCircle-video1':
+        minX, minY, maxX, maxY = 0, 0, 60, 80
+        preferred_actions = [0]
+        initial_belief_support = [(30, 0)]
+        targets = set([(30, maxY), (30, maxY-1), (30-1, maxY), (30-1, maxY-1), ])
+        end_states = set(list(targets))
+        obstacles = set()
+        
+        for y in [10, 20, 30, 50, 60]:
+            for x in range(0, 21):
+                obstacles.add((x, y))
+            for x in range(40, maxX + 1):
+                obstacles.add((x, y))
+        
+        for y in range(0, 10):
+            for x in range(0, 21):
+                obstacles.add((x, y))
+            for x in range(40, maxX + 1):
+                obstacles.add((x, y))
+        
+        for y in range(70, 81):
+            for x in range(0, 21):
+                obstacles.add((x, y))
+            for x in range(40, maxX + 1):
+                obstacles.add((x, y))
+        
+        for x in range(25, 36):
+            for y in range(35, 46):
+                obstacles.add((x, y))
+        
     pomdp = create_scenario_obstacle(minX, minY, maxX, maxY, 
                              initial_belief_support,
                              targets, end_states,
@@ -565,9 +614,10 @@ def test_scenario(pomdp):
 
 if __name__ == "__main__":
     # pomdp = create_scenario('ETH')
-    pomdp = create_scenario("SDD-bookstore-video1")
+    # pomdp = create_scenario("SDD-bookstore-video1")
+    pomdp = create_scenario("SDD-deathCircle-video1")
     # test_scenario(pomdp)
-    pomdp.plot_map()
+    pomdp.plot_map(True)
     # pomdp = create_scenario_obstacle()
     # pomdp.write_model()
     # print(pomdp.obstacles)
