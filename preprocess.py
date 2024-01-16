@@ -57,6 +57,7 @@ def describle_SSD(SDD_path):
     r.to_csv(SDD_path + "r.csv")
 
 def create_test_dataset(raw_dataset_path, min_cooldown, max_cooldown):
+    print("Creating online dynamic test data")
     file = os.path.join(raw_dataset_path, "rawdata_test.csv")
     if not os.path.exists(file):
         print("test data not unavaiable. Creating...")
