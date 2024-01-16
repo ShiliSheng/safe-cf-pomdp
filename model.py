@@ -304,7 +304,7 @@ class Model:
         self.state_observation_map = copy.deepcopy(self.state_observation_map_default)
 
     def write_model(self):
-        if os.path.exists("./pomdp_states/"): os.mkdir("./pomdp_states/")
+        if not os.path.exists("./pomdp_states/"): os.mkdir("./pomdp_states/")
         file = open('./pomdp_states/state_trainsiton.dat','w')
         for state in self.robot_state_action_map:
             for actionIndex in self.robot_state_action_map[state]:
