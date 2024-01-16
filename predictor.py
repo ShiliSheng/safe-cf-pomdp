@@ -83,7 +83,7 @@ class Predictor():
         print("model trained, loaded and saved", output_LSTM_file)
 
     def validate(self, train_dataset_path):
-        validation_dataset = load_dataset(train_dataset_path, 'validation_dataset', history_length, prediction_length)
+        validation_dataset = load_dataset(train_dataset_path, 'validation_dataset', self.history_length, self.prediction_length)
         validation_dataset = DataLoader(validation_dataset, batch_size=64, shuffle=False)
         if not self.model:
             model_file = train_dataset_path + 'history-{}-prediction-{}.pth'.format(self.history_length, self.prediction_length)
@@ -215,7 +215,7 @@ class Predictor():
     
 if __name__ == "__main__":
     path = './test_data/'
-    scene = "/SDD-deathCircle-video0/"
+    scene = "/SDD-deathCircle-video1/"
     history_length = 4
     prediction_length = 3
     prediction_model = Predictor(history_length, prediction_length)
