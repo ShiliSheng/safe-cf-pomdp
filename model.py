@@ -17,7 +17,7 @@ def print(*args, **kwargs):
     return
 
 class Model:
-    def __init__(self, robot_nodes, actions, robot_edges, cost, initial_belief,
+    def __init__(self, model_name, robot_nodes, actions, robot_edges, cost, initial_belief, minX, minY, maxX, maxY,
                 targets = [], end_states = set(), state_reward = {}, preferred_actions = [], obstacles = []):
         self.robot_nodes = robot_nodes # set of states
         self.actions = actions

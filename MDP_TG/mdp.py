@@ -265,7 +265,7 @@ def find_SCCs(mdp, Sneg):
                 simple_digraph.add_edge(s_f, s_t)
     print("SubGraph of one Sf: %s states and %s edges" %
           (str(len(simple_digraph.nodes())), str(len(simple_digraph.edges()))))
-    for scc in strongly_connected_components_recursive(simple_digraph):
+    for scc in strongly_connected_components(simple_digraph):
         SCC.add(frozenset(scc))
     return SCC, A
 
