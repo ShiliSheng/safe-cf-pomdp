@@ -121,8 +121,14 @@ class Model:
         self.motion_mdp = motion_mdp
         return motion_mdp, AccStates
         
-    def check_winning(self, state, oc):
-        return True
+    def check_winning(self, state, oc, state_observation_map_change_record, state_observation_map_dict_new, winning_obs): 
+        state_count = (state, oc)
+        if state_count in state_observation_map_change_record:
+            observation_count = state_observation_map_dict_new[state_count]
+        else:
+            observation_count = (self.state_observation_map[state], oc) 
+        if  observation_count in winning_obs:
+            return True
 
     def online_compute_winning_region(self, obs_initial_node, AccStates, observation_successor_map, H, ACP, dfa = []):
         #--------------ONLINE-------------------------
@@ -138,6 +144,8 @@ class Model:
         # print( "------- obstacle_new", obstacle_new,)
         observation_state_map_change_record = set()
         state_observation_map_change_record = set()
+        observation_state_map_dict_new = dict()
+        state_observation_map_dict_new = dict()
         #----add time counter----
         SS = dict()
         observation_target = set()
@@ -152,15 +160,24 @@ class Model:
                 if (onode_count == (4,2)):
                     print(onode_count)
                 support_set = set(self.observation_state_map[o_node])
+                support_set_count = set()
+                for fnode in support_set:
+                    fnode_count = (fnode, oc)
+                    support_set_count.add(fnode_count)
                 SS[oc] = support_set.intersection(obstacle_new[oc])
-                if len(SS[oc]) > 0:
+                SS_count = set()
+                for fnode in SS[oc]:
+                    fnode_count = (fnode, oc)
+                    SS_count.add(fnode_count)
+                if len(SS_count) > 0:
                     o_node_not_obstacle = support_set.difference(SS[oc])
-                    for ws_node in SS[oc]:
-                        obs_nodes_reachable[(ws_node, oc)] = {frozenset(['obstacle']): 1.0}
-                        observation_state_map_change_record.add(ws_node)
-                        state_observation_map_change_record.add(ws_node)
-                        self.observation_state_map[ws_node] = [ws_node]     # 
-                        self.state_observation_map[ws_node] = ws_node       #
+                    o_node_not_obstacle_count = support_set_count.difference(SS_count)
+                    for ws_node_count in SS_count:
+                        obs_nodes_reachable[ws_node_count] = {frozenset(['obstacle']): 1.0}
+                        observation_state_map_change_record.add(ws_node_count)
+                        state_observation_map_change_record.add(ws_node_count)
+                        observation_state_map_dict_new[ws_node_count] = [ws_node_count]     # 
+                        state_observation_map_dict_new[ws_node_count] = ws_node_count       #
                         # (0, 0) => (3, 3)
                         # (10, 10)  => (13, 13)
                         # (0, 0, 1)  safe => (3, 3, 1), (3, 3, 1) should be in winning obs
@@ -171,13 +188,12 @@ class Model:
                         # (10, 10, 2) unsafe => (10, 10, 2): (10, 10, 2) should not be in winning obs
                         # state:  (10, 10, 1) => obs:(10, 10, 1)
                         # state, oc => obs => winning
-                        self.winning_state_observation_map[(ws_node, oc)] = (ws_node, oc)
-                        ws_obstacle = (ws_node, oc)
-                        observation_obstacle.add(ws_obstacle)
+                        self.winning_state_observation_map[ws_node_count] = ws_node_count
+                        observation_obstacle.add(ws_node_count)
 
                     if len(o_node_not_obstacle) > 0:
-                        observation_state_map_change_record.add(o_node)
-                        self.observation_state_map[o_node] = o_node_not_obstacle
+                        observation_state_map_change_record.add(onode_count)
+                        observation_state_map_dict_new[onode_count] = o_node_not_obstacle_count
                         if o_node_not_obstacle.issubset(set(AccStates)):
                             obs_nodes_reachable[onode_count] = {frozenset(['target']): 1.0}
                             observation_target.add(onode_count)
@@ -242,7 +258,7 @@ class Model:
         f_accept_observation.close()
 
         self.winning_obs = Winning_obs
-        return obs_mdp, Winning_obs, A_valid, observation_state_map_change_record, state_observation_map_change_record
+        return obs_mdp, Winning_obs, A_valid, observation_state_map_change_record, state_observation_map_change_record, state_observation_map_dict_new
 
     def compute_H_step_space(self, H):
         #Compute the H-step recahable support belief states, idea: o -> s -> s' -> o'
