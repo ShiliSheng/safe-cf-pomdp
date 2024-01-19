@@ -207,7 +207,7 @@ class Model:
         Winning_obs = observation_target
         self.winning_obs = Winning_obs
 
-        # Pian: can I comment out the code below? they seem unuseful?
+        # Pian: can I comment out the code below? they seem unuseful? Yes, it's fine.
             # if not, there is a bug in Line 219, when o_node[0] is not in self.observation_state_map
 
         # obs_initial_dict = obs_nodes_reachable[obs_initial_node_count]
