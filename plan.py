@@ -191,8 +191,9 @@ def test(scene, shieldLevel, target_failure_prob_delta, prediction_length, histo
             ACP_step = pomdp.build_restrictive_region(estimation_moving_agents[cur_time], constraints[cur_time+1], H, safe_distance)
             obs_current_node = pomcp.get_observation(state_ground_truth)
             # t1 = time.time()
-            obs_mdp, Winning_obs, A_valid, observation_state_map_change_record, state_observation_map_change_record  \
-                    = pomcp.pomdp.online_compute_winning_region(obs_current_node, AccStates, observation_successor_map, H, ACP_step)
+            # print("ACP", ACP_step)
+            # obs_mdp, Winning_obs, A_valid \
+            pomcp.pomdp.online_compute_winning_region(obs_current_node, AccStates, observation_successor_map, H, ACP_step)
             # t2 = time.time()
             # print("time for winning", t2 - t1)
             
@@ -240,7 +241,7 @@ def test(scene, shieldLevel, target_failure_prob_delta, prediction_length, histo
             print("step,", action_step, "cur", cur_time, "state", state_ground_truth,"action", action)
             if plot_along: plot_figure_from_data(data, file_path.replace("results", "figures") + "/Episode-{}/".format(episode_index))
             state_ground_truth = next_state_ground_truth
-            pomcp.pomdp.restore_states_from_change(observation_state_map_change_record, state_observation_map_change_record )                    
+            # pomcp.pomdp.restore_states_from_change(observation_state_map_change_record, state_observation_map_change_record )                    
             # print(pomcp.pomdp.observation_state_map == pomcp.pomdp.observation_state_map_default, pomcp.pomdp.state_observation_map == pomcp.pomdp.state_observation_map_default )
             cur_time += 1
         
@@ -285,18 +286,24 @@ def test(scene, shieldLevel, target_failure_prob_delta, prediction_length, histo
 
 if __name__ == "__main__":
 
-    # test(scene= "ETH", shieldLevel = 1, target_failure_prob_delta = 0.1, prediction_length = 3,
-    #             history_length = 4,  num_agents_tracked = 5, num_episodes = 100, max_steps = 200, explore_constant = 250)
-
+    for num_agents_tracked in [3,5,7]:
+        test(scene= "ETH", shieldLevel = 0, target_failure_prob_delta = 0.05, prediction_length = 3,
+                    history_length = 4,  num_agents_tracked = num_agents_tracked, num_episodes = 100, max_steps = 200, explore_constant = 250,
+                    plot_along= False)
+        
+        for delta in [0.05, 0.1, 0.2]:
+            for H in [4, 6, 8]:
+                test(scene= "ETH", shieldLevel = 1, target_failure_prob_delta = delta, prediction_length = H,
+                        history_length = 4,  num_agents_tracked = num_agents_tracked, num_episodes = 100, max_steps = 200, explore_constant = 250,
+                        plot_along= False)
     # for delta in [0.05, 0.2]:
     #     for H in [3, 5]:
     #         test(scene= "ETH", shieldLevel = 1, target_failure_prob_delta = delta, prediction_length = H,
     #             history_length= 4,  num_agents_tracked = 5, num_episodes = 100, max_steps = 200, explore_constant = 250)
 
-    scene2 = 'SDD-bookstore-video1'
-    test(scene= scene2, shieldLevel = 1, target_failure_prob_delta = 0.1, prediction_length = 5,
-                history_length = 4,  num_agents_tracked = 2, num_episodes = 1, max_steps = 200, explore_constant = 250,
-                plot_along = True, 
-                )
-
+    # scene2 = 'SDD-bookstore-video1'
+    # test(scene= scene2, shieldLevel = 1, target_failure_prob_delta = 0.1, prediction_length = 5,
+    #             history_length = 4,  num_agents_tracked = 2, num_episodes = 1, max_steps = 200, explore_constant = 250,
+    #             plot_along = True, 
+    #             )
     pass
