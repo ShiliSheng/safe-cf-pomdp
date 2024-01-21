@@ -1,5 +1,6 @@
 from scipy.stats import f_oneway
 from statsmodels.stats.multicomp import pairwise_tukeyhsd
+import statsmodels.api as sm
 
 import numpy as np
 import pandas as pd
@@ -137,18 +138,22 @@ def get_statistics(path):
             with open(episode_file, 'rb') as episode_file_pkl:
                 episode_data = pickle.load(episode_file_pkl)
             index = 0
-            cnt = 0
+            cnt_action_taken = 0
             cumulative_time = 0
             max_plan_time = 0
+            cnt_close_to_agents = 0
             while index+1 < len(episode_data):
                 if episode_data[index+1]["Action Step"] > 1:
                     plan_time = episode_data[index+1]["Clock Time"] - episode_data[index]["Clock Time"]
                     cumulative_time += plan_time
-                    cnt += 1
+                    cnt_action_taken += 1
                     max_plan_time = max(max_plan_time, plan_time)
+                    if episode_data[index + 1]["Current Minimum Distance to Agents"] < episode_data[index + 1]["Safe Distance"]:
+                        cnt_close_to_agents += 1
                 index+=1
             df.loc[i_episode, "max_plan_time"] = max_plan_time
-            df.loc[i_episode, "average_plan_time"] = cumulative_time / cnt
+            df.loc[i_episode, "average_plan_time"] = cumulative_time / cnt_action_taken
+            df.loc[i_episode, "Number of being unsafe distance to agents"] = cnt_close_to_agents
 
         for i in range(len(df)):
             if df.loc[i,"Minimum Distance to Agents"] >= df.loc[i,"Safe Distance"]  \
@@ -159,18 +164,18 @@ def get_statistics(path):
 
         day_time = ''.join(experiment_setting.split("-")[8:])
         data = {
-            "Setting":                          experiment_setting,
-            "Episodes":                         len(df),
-            "Shield Level":                     df["Shield Level"].iloc[0],
-            "Predict Horizon":                  df["Predict Horizon"].iloc[0],
-            "Failure Rate":                     df["Failure Rate"].iloc[0],
-            "Number of Dynamic Agents":         df["Number of Dynamic Agents"].iloc[0],
-            "Average Minimum Distance to Agents":       df["Minimum Distance to Agents"].mean(),
-            "Min of Minimum Distance to Agents":       df["Minimum Distance to Agents"].min(),
-            'Cumulative Undiscounted Reward':   df['Cumulative Undiscounted Reward'].mean(),
-            "Number of Unsafe Action":          df["Number of Unsafe Action"].mean(),
-            'Number of Collision with Static Obstalces':           df['Number of Unsafe State'].mean(),
-            'Number of Unsafe Distance to agents':          sum(df["Minimum Distance to Agents"] < 0.5),
+        "Setting":                                          experiment_setting,
+            "Episodes":                                     len(df),
+            "Shield Level":                                 df["Shield Level"].iloc[0],
+            "Predict Horizon":                              df["Predict Horizon"].iloc[0],
+            "Failure Rate":                                 df["Failure Rate"].iloc[0],
+            "Number of Dynamic Agents":                     df["Number of Dynamic Agents"].iloc[0],
+            "Average Minimum Distance to Agents":           df["Minimum Distance to Agents"].mean(),
+            "Min of Minimum Distance to Agents":            df["Minimum Distance to Agents"].min(),
+            'Cumulative Undiscounted Reward':               df['Cumulative Undiscounted Reward'].mean(),
+            "Number of Unsafe Action":                      df["Number of Unsafe Action"].mean(),
+            'Average number of Collision with Static Obstalces':    df['Number of Unsafe State'].mean(),
+            'Average number of Unsafe Distance to agents':          df["Number of being unsafe distance to agents"].mean(),
             'Reached Target':                   df['Reached Target'].mean(),
             'Safe Reach':                       df['safe reach'].mean(),
             'Action Time spent per action in seconds': df['Action Time spent per action in seconds'].mean(),
@@ -220,16 +225,30 @@ def get_statistics(path):
 
 
 
-
 def plot_results():
     plot_figure(path = "./results/ObstacleGridSize-22/shield_1-lookback_4-prediction_3-failure_0.1-2024-01-10-10-02/")
-
-
 
 if __name__ == "__main__":
     # plot_results()
     # path = './results/Obstacle-SDD-bookstore-video1-0-0-60-60/shield_1-lookback_4-prediction_5-failure-0.1-agents-10-2024-01-14-11-47/'
     # plot_figure(path)
-    path = '/results/Obstacle-ETH-0-0-22-22.'
+    path = './results/Obstacle-ETH-0-0-22-22/'
     get_statistics(path = "./results/Obstacle-ETH-0-0-22-22/")
+    
+    # df = pd.read_table(path + "stat.csv", sep = ",")
+
+    # # Assuming df is your DataFrame
+    # X = df[['Failure Rate', 'Predict Horizon', 'Number of Dynamic Agents']]
+    # y = df["Reached Target"]
+
+    # # Add a constant term to the independent variables
+    # X = sm.add_constant(X)
+
+    # # Fit the logistic regression model
+    # model = sm.Logit(y, X)
+    # result = model.fit()
+
+    # # Display the summary of the regression
+    # print(result.summary())
+
     pass
