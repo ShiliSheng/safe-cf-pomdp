@@ -320,6 +320,8 @@ class POMCP:
         if self.verbose >= 1:
             print("finishing all simulations", self.numSimulations)
             
+    def check_winning(self, state, time_count):
+        return self.pomdp.check_winning(state, time_count)
 
     def simulateV(self, state, vnode):
         if (self.TreeDepth >= self.maxDepth): 
@@ -329,21 +331,18 @@ class POMCP:
             self.expand(vnode, state)
 
         actionIndex = self.greedyUCB(vnode, True)
+        winning = True
         if self.TreeDepth <= self.horizon and self.shieldLevel == ON_THE_FLY:
             if not vnode.have_state_in_belief_support(state): 
-                # print("checking", self.TreeDepth, state, pomdp.state_observation_map[state], vnode.belief.keys())
-                # if (self.TreeDepth == 1):
-                #     print(self.TreeDepth, state, vnode.getH())
-                if not self.is_current_belief_winning(vnode, self.TreeDepth): #TODO
+                # check if this state is winning or not   
+                winning = self.check_winning(state, self.TreeDepth)
+                if not winning:
                     qparent = vnode.getParent() 
                     parentActionIndex = qparent.getH()
                     vparent = qparent.getParent() 
                     vparent.add_illegal_action_index(parentActionIndex)
                     # print("not winning", self.TreeDepth, parentActionIndex, state, self.get_observation(state))
-                    # print(self.pomdp.winning_obs)
-                # else:
-                    # print("winning")
-        if self.TreeDepth >= 1:
+        if self.TreeDepth >= 1 and winning:
             vnode.add_particle(state)
 
         qnode = vnode.get_child_by_action_index(actionIndex)
@@ -398,7 +397,6 @@ class POMCP:
             for state in self.root.belief:
                 obs = self.get_observation(state)
                 if not self.is_winning((obs, time)):
-                    # print(state, obs, self.TreeDepth,"ddddddddd")
                     return False
         obs = vnode.getH()
         return self.is_winning((obs, time))  
