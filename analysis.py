@@ -119,23 +119,45 @@ def plot_figure(path):
             plot_figure_from_data(row, figure_path)
         plot_gif(figure_path)
 
+
 def get_statistics(path):
     np.set_printoptions(precision=2, suppress=True)
-    
     result = []
     record_min_distance = []
     record_reward = []
     for experiment_setting in os.listdir(path):
-        print(experiment_setting)
         # if not os.path.isdir(path + experiment_setting ): continue
         if not os.path.exists(path + experiment_setting + '/summary.csv'): continue
         file = path + experiment_setting + "/summary.csv"
         df = pd.read_csv(file, index_col=0)
-        if len(df) < 10: continue
-        needed = ['shield_0-lookback_4-prediction_3-failure-0.2-agents-5-2024-01-13-12-54', 
-        'shield_1-lookback_4-prediction_3-failure-0.05-agents-5-2024-01-13-22-09',
-        'shield_1-lookback_4-prediction_3-failure-0.2-agents-5-2024-01-13-18-16',]
-        # if experiment_setting not in needed: continue
+        n_episodes = len(df)
+        
+        for i_episode in range(n_episodes):
+            episode_file = os.path.join(path, experiment_setting, "Episode-{}.pkl".format(i_episode))
+            with open(episode_file, 'rb') as episode_file_pkl:
+                episode_data = pickle.load(episode_file_pkl)
+            index = 0
+            cnt = 0
+            cumulative_time = 0
+            max_plan_time = 0
+            while index+1 < len(episode_data):
+                if episode_data[index+1]["Action Step"] > 1:
+                    plan_time = episode_data[index+1]["Clock Time"] - episode_data[index]["Clock Time"]
+                    cumulative_time += plan_time
+                    cnt += 1
+                    max_plan_time = max(max_plan_time, plan_time)
+                index+=1
+            df.loc[i_episode, "max_plan_time"] = max_plan_time
+            df.loc[i_episode, "average_plan_time"] = cumulative_time / cnt
+
+        for i in range(len(df)):
+            if df.loc[i,"Minimum Distance to Agents"] >= df.loc[i,"Safe Distance"]  \
+                and  df.loc[i,"Reached Target"] == 1 and df.loc[i,"Number of Unsafe State"] == 0:
+                df.loc[i, "safe reach"] = 1
+            else:
+                df.loc[i, "safe reach"] = 0
+
+        day_time = ''.join(experiment_setting.split("-")[8:])
         data = {
             "Setting":                          experiment_setting,
             "Episodes":                         len(df),
@@ -150,7 +172,10 @@ def get_statistics(path):
             'Number of Collision with Static Obstalces':           df['Number of Unsafe State'].mean(),
             'Number of Unsafe Distance to agents':          sum(df["Minimum Distance to Agents"] < 0.5),
             'Reached Target':                   df['Reached Target'].mean(),
+            'Safe Reach':                       df['safe reach'].mean(),
             'Action Time spent per action in seconds': df['Action Time spent per action in seconds'].mean(),
+            'Average of average plan time':     df['average_plan_time'].mean(),
+            'Max of max plan time':             df['max_plan_time'].max(),
         }
         setting = "{}-{}-{}".format(data["Shield Level"], data["Predict Horizon"], data["Failure Rate"])
         min_distance = pd.DataFrame()
@@ -202,13 +227,9 @@ def plot_results():
 
 
 if __name__ == "__main__":
-    
-
     # plot_results()
-
     # path = './results/Obstacle-SDD-bookstore-video1-0-0-60-60/shield_1-lookback_4-prediction_5-failure-0.1-agents-10-2024-01-14-11-47/'
     # plot_figure(path)
-
     path = '/results/Obstacle-ETH-0-0-22-22.'
     get_statistics(path = "./results/Obstacle-ETH-0-0-22-22/")
     pass
