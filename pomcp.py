@@ -316,7 +316,7 @@ class POMCP:
                 print("==MCTS after num simulation", n)
         for actionIndex in self.root.children:
             qnode = self.root.get_child_by_action_index(actionIndex)
-            # print("MCTS",actionIndex, qnode.v, qnode.n)
+            print("MCTS",actionIndex, qnode.v, qnode.n,qnode.v / (1+qnode.n) )
         if self.verbose >= 1:
             print("finishing all simulations", self.numSimulations)
             
@@ -509,6 +509,7 @@ class POMCP:
         children = vnode.children
         action_index_candidates = []
         for i in children:
+            if i in vnode.illegalActionIndexes: continue
             action_index_candidates.append(i)
             # 			if (shieldLevel == ON_THE_FLY_SHIELD && vnode.isActionIndexIllegal(i)) {
             # //				System.out.println("shield level" + shieldLevel + " known illegal action " + allActions.get(i) +" for node " + vnode.getID() + " belief support" 	+ vnode.getBelief().getUniqueStatesInt());
@@ -547,7 +548,7 @@ class POMCP:
             return random.choice(besta)
         else:
             if not action_index_candidates:
-                return -1 if not ucb else random.choice(len(self.pomdp.actions))
+                return -1 if not ucb else random.choice(range(len(self.pomdp.actions)))
             actionIndex = random.choice(action_index_candidates)
             qParent = vnode.parent
             vParent = qParent.parent
@@ -563,10 +564,25 @@ class POMCP:
 
 def replay():
     pkl_file = 'results/Obstacle-SDD-bookstore-video1-0-0-60-60/shield_1-lookback_4-prediction_5-failure-0.1-agents-10-2024-01-14-11-47/Episode-0.pkl'
+    
+    scene = './results/Obstacle-ETH-0-0-22-22/'
+    setting = "shield_1-lookback_4-prediction_8-failure-0.1-agents-5-2024-01-20-07-07/"
+    episode = 54
+    pkl_file = os.path.join(scene, setting, "Episode-{}.pkl".format(episode))
+    question_step = 102
+    scene_name  = 'ETH'
+
+    # scene = './results/Obstacle-ETH-0-0-22-22/'
+    # setting = "shield_1-lookback_4-prediction_4-failure-0.05-agents-5-2024-01-20-00-00/"
+    # episode = 32
+    # pkl_file = os.path.join(scene, setting, "Episode-{}.pkl".format(episode))
+    # question_step = 39
+    # scene_name  = 'ETH'
+
     with open(pkl_file, 'rb') as file:
         data = pickle.load(file)
     step = -1
-    question_step = 146
+    
     for d in data:
         if d.get("Action Step", - 1) == question_step:
             step = d
@@ -574,10 +590,8 @@ def replay():
     
     belief_support = step["Belief States"]
     belief = {state: 1/len(belief_support) for state in belief_support}
-
-    scene = 'SDD-bookstore-video1'
     
-    pomdp = create_scenario(scene)
+    pomdp = create_scenario(scene_name)
     pomdp.initial_belief = belief
 
     estimation_moving_agents_cur = step["Dynamic Agents Prediction"]
@@ -588,30 +602,35 @@ def replay():
     shield_level = step["Shield Level"]
     disallowed = step["Disallowed Actions"]
     # print("disallowed", disallowed, state_ground_truth, shield_level)
-    pomcp = POMCP(pomdp, shield_level, H,  constant = 250)
+    pomcp = POMCP(pomdp, shield_level, H,  constant = 250, maxDepth = 100, numSimulations = 2 ** 12)
 
     ACP_step = pomdp.build_restrictive_region(estimation_moving_agents_cur, constraints_cur_1, H, safe_distance)
     obs_current_node = pomcp.get_observation(state_ground_truth)
     motion_mdp, AccStates = pomcp.pomdp.compute_accepting_states() 
     observation_successor_map = pomcp.pomdp.compute_H_step_space(H)
-    obs_mdp, Winning_obs, A_valid, observation_state_map_change_record, state_observation_map_change_record  \
-                    = pomcp.pomdp.online_compute_winning_region(obs_current_node, AccStates, observation_successor_map, H, ACP_step)
+    pomcp.pomdp.online_compute_winning_region(obs_current_node, AccStates, observation_successor_map, H, ACP_step)
 
     # print(ACP_step)
     # print(constraints_cur_1)
 
-    a, b = state_ground_truth
-    for h in ACP_step:
-        # if h > 1: break
-        for x, y in ACP_step[h]:
-            dis = ((x-a) ** 2 + (y - b) ** 2) ** 0.5
-            if dis < constraints_cur_1[h] + safe_distance:
-                print(h, (x, y), (a, b), dis, constraints_cur_1[h], safe_distance)
+    # a, b = state_ground_truth
+    # for h in ACP_step:
+    #     # if h > 1: break
+    #     for x, y in ACP_step[h]:
+    #         dis = ((x-a) ** 2 + (y - b) ** 2) ** 0.5
+    #         if dis < constraints_cur_1[h] + safe_distance:
+    #             print(h, (x, y), (a, b), dis, constraints_cur_1[h], safe_distance)
     # # print(pomdp.obstacles)
     # # pomcp = POMCP(pomdp, 0, 3, 0)
-    # pomcp.reset_root()
-    # pomcp.select_action()
-    # print(pomcp.root.illegalActionIndexes)
+    pomcp.reset_root()
+    actionIndex = pomcp.select_action()
+    if actionIndex == -1:
+        if pomcp.pomdp.preferred_actions:
+            actionIndex = random.choice(pomcp.pomdp.preferred_actions)
+        else:
+            actionIndex = random.choice([idx for idx in range(len(pomcp.pomdp.actions))])
+    print(actionIndex, "selected", pomcp.pomdp.actions[actionIndex])
+    print(pomcp.root.illegalActionIndexes)
     # for state in pomcp.root.belief:
     #     for nxt in pomcp.pomdp.robot_state_action_map[state][2]:
     #         # print(nxt)
