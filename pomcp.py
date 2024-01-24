@@ -147,7 +147,10 @@ class POMCPNode:
         return state in self.belief
     
 class POMCP:
-    def __init__(self, pomdp, shieldLevel = 0, shieldHorizon = 5,  constant = 10, maxDepth = 100, numSimulations = 2 ** 12):
+    def __init__(self, pomdp, shieldLevel = 0, shieldHorizon = 5,  
+                 constant = 10, maxDepth = 100, gamma = 0.99, 
+                 numSimulations = 2 ** 12,
+                 ):
 
         # def __init__(self, initial_belief, actions, robot_state_action_map, state_to_observation, state_action_reward_map, 
         #              end_states, constant = 1000, maxDepth = 100, targets = set()):
@@ -156,7 +159,7 @@ class POMCP:
         # no_particles (int): Controls the maximum number of particles that will be kept at each node 
         #                       and the number of particles that will be sampled from the posterior belief after an action is taken.
         self.numSimulations = numSimulations
-        self.gamma = 0.95
+        self.gamma = gamma
         self.e = 0.05
         self.noParticles = 1200
         self.K = 10000
@@ -316,7 +319,7 @@ class POMCP:
                 print("==MCTS after num simulation", n)
         for actionIndex in self.root.children:
             qnode = self.root.get_child_by_action_index(actionIndex)
-            print("MCTS",actionIndex, qnode.v, qnode.n,qnode.v / (1+qnode.n) )
+            # print("MCTS",actionIndex, qnode.v, qnode.n,qnode.v / (1+qnode.n) )
         if self.verbose >= 1:
             print("finishing all simulations", self.numSimulations)
             
@@ -562,7 +565,7 @@ class POMCP:
                 self.action2Index[action] = i
         return self.action2Index.get(action, -1)
 
-def replay():
+def replay(H_default = -1):
     pkl_file = 'results/Obstacle-SDD-bookstore-video1-0-0-60-60/shield_1-lookback_4-prediction_5-failure-0.1-agents-10-2024-01-14-11-47/Episode-0.pkl'
     
     scene = './results/Obstacle-ETH-0-0-22-22/'
@@ -593,18 +596,22 @@ def replay():
     
     pomdp = create_scenario(scene_name)
     pomdp.initial_belief = belief
-
+    pomdp.preferred_actions = [0, 2]
     estimation_moving_agents_cur = step["Dynamic Agents Prediction"]
     constraints_cur_1 = step["Estimated Regions"]
     H = step["Predict Horizon"]
+    if H_default > 0:
+        H = H_default
     safe_distance = step["Safe Distance"]
     state_ground_truth = step["Robot State"]
     shield_level = step["Shield Level"]
     disallowed = step["Disallowed Actions"]
+    shield_level = 0
     # print("disallowed", disallowed, state_ground_truth, shield_level)
-    pomcp = POMCP(pomdp, shield_level, H,  constant = 250, maxDepth = 100, numSimulations = 2 ** 12)
-
+    pomcp = POMCP(pomdp, shield_level, H,  constant = 170, maxDepth = 100, numSimulations = 2 ** 12)
+    
     ACP_step = pomdp.build_restrictive_region(estimation_moving_agents_cur, constraints_cur_1, H, safe_distance)
+    ACP_step = defaultdict(list)
     obs_current_node = pomcp.get_observation(state_ground_truth)
     motion_mdp, AccStates = pomcp.pomdp.compute_accepting_states() 
     observation_successor_map = pomcp.pomdp.compute_H_step_space(H)
@@ -631,6 +638,7 @@ def replay():
             actionIndex = random.choice([idx for idx in range(len(pomcp.pomdp.actions))])
     print(actionIndex, "selected", pomcp.pomdp.actions[actionIndex])
     print(pomcp.root.illegalActionIndexes)
+    return pomcp.pomdp.actions[actionIndex]
     # for state in pomcp.root.belief:
     #     for nxt in pomcp.pomdp.robot_state_action_map[state][2]:
     #         # print(nxt)
@@ -641,6 +649,24 @@ def replay():
     # print(pomcp.R_min, pomcp.R_max)
     
     #shieldLevel = 0, shieldHorizon = 5,  constant = 10, maxDepth = 100, numSimulations = 2 ** 12):
+
+def test_const(scene_name):
+    pomdp = create_scenario(scene_name)
+    # pomdp.preferred_actions = [] # ? do we need this
+    print(pomdp.initial_belief)
+    pomcp = POMCP(pomdp, shieldLevel=0, shieldHorizon=2, constant=0, maxDepth = 200, gamma=0.95)
+    pomcp.reset_root()
+    pomcp.select_action()
+    print(pomcp.R_max, pomcp.R_min)
+
 if __name__ == "__main__":
-    replay()
-    pass
+    # result = []
+    # for h in [4, 6, 8]:
+    #     res = []
+    #     for _ in range(100):
+    #         a = replay(H_default=h)
+    #         res.append(a)
+    #     result.append((h, res.count('E')))
+    # print(result)
+    # pass
+    test_const('ETH')
