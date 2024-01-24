@@ -8,7 +8,7 @@ import time
 import math
 import copy
 import random
-from analysis import plot_figure_from_data
+from plot import plot_figure_from_data
 from preprocess import create_test_dataset
 from model import create_scenario
 from model import Model
@@ -22,8 +22,6 @@ import os, yaml
 import copy
 from datetime import datetime
 
-# def print(*args, **kwargs):
-#     return
 
 def get_min_distance(state_ground_truth, Y_cur_agents):
     cx, cy = state_ground_truth[0], state_ground_truth[1]
@@ -36,7 +34,8 @@ def get_min_distance(state_ground_truth, Y_cur_agents):
 
 def test(scene, shieldLevel, target_failure_prob_delta, prediction_length, history_length = 4,
         num_agents_tracked = 3, num_episodes = 20, max_steps = 200,
-        explore_constant = 100, plot_along = False):
+        explore_constant = 100, plot_along = False, pomcp_maxDepth = 100, print_along = False,
+        pomcp_gamma = 0.99):
     log_time = f"{datetime.now().strftime('%Y-%m-%d-%H-%M')}"
 
     #Settings for LSTM trajectory prediction
@@ -69,9 +68,9 @@ def test(scene, shieldLevel, target_failure_prob_delta, prediction_length, histo
     results = []
     
     for episode_index in range(num_episodes):
-        print(file_path, episode_index)
+        if print_along: print(file_path, episode_index)
         step_record = []
-        pomcp = POMCP(pomdp, shieldLevel, prediction_model.prediction_length, explore_constant)
+        pomcp = POMCP(pomdp, shieldLevel, prediction_model.prediction_length, explore_constant, maxDepth = pomcp_maxDepth, gamma=pomcp_gamma)
         pomcp.reset_root()
         motion_mdp, AccStates = pomcp.pomdp.compute_accepting_states() 
         observation_successor_map = pomcp.pomdp.compute_H_step_space(H)
@@ -85,7 +84,8 @@ def test(scene, shieldLevel, target_failure_prob_delta, prediction_length, histo
         discount = 1
         cur_min_distance = 1000
         count_unsafe_action = 0
-        count_unsafe_state = 0
+        count_unsafe_to_static_obstacles = 0
+        count_unsafe_to_dynamic_agents = 0
         action = ""
 
         error = [[0] * (H+1) for _ in range(max_steps + 10)]
@@ -103,8 +103,6 @@ def test(scene, shieldLevel, target_failure_prob_delta, prediction_length, histo
 
         while not done and cur_time < max_steps:
             done = state_ground_truth in pomcp.pomdp.end_states
-            if (state_ground_truth[0], state_ground_truth[1]) in pomcp.pomdp.obstacles:
-                count_unsafe_state += 1
             
             estimation = prediction_model.predict(dynamic_agents, cur_time, starting_col_index )  # Line 3, 4 
             
@@ -131,7 +129,7 @@ def test(scene, shieldLevel, target_failure_prob_delta, prediction_length, histo
                     "minX": pomcp.pomdp.minX, "minY": pomcp.pomdp.minY,
                     "maxX": pomcp.pomdp.maxX, "maxY": pomcp.pomdp.maxY,
                     "Stacic Obstacles": pomcp.pomdp.obstacles,  "Refule Stations":pomcp.pomdp.refule_stations, "Rocks": pomcp.pomdp.rocks,
-                    "Number of Unsafe Action": count_unsafe_action, "Number of Unsafe State": count_unsafe_state, "done": done,
+                    "Number of Unsafe Action": count_unsafe_action, "Number of Unsafe State": count_unsafe_to_static_obstacles, "done": done,
                     "Number of Dynamic Agents": num_agents_tracked, 
                     # "Selected Action": action, "Disallowed Actions": [pomcp.pomdp.actions[idx] for idx in pomcp.root.illegalActionIndexes],
                     # "Estimated Regions": constraints[cur_time + 1], "Dynamic Agents Prediction": estimation_moving_agents[cur_time]
@@ -148,6 +146,7 @@ def test(scene, shieldLevel, target_failure_prob_delta, prediction_length, histo
                 cf_scores[tau].add(estimation_error)
 
                 error[cur_time][tau] = 0 if estimation_error <= constraints[cur_time][tau] else 1         # Line 6
+                
                 failure_prob_delta[cur_time + 1][tau] = failure_prob_delta[cur_time][tau] +  \
                                                         acp_learing_gamma * (target_failure_prob_delta * error[cur_time][tau])
 
@@ -178,7 +177,7 @@ def test(scene, shieldLevel, target_failure_prob_delta, prediction_length, histo
                     "minX": pomcp.pomdp.minX, "minY": pomcp.pomdp.minY,
                     "maxX": pomcp.pomdp.maxX, "maxY": pomcp.pomdp.maxY,
                     "Stacic Obstacles": pomcp.pomdp.obstacles,  "Refule Stations":pomcp.pomdp.refule_stations, "Rocks": pomcp.pomdp.rocks,
-                    "Number of Unsafe Action": count_unsafe_action, "Number of Unsafe State": count_unsafe_state, "done": done,
+                    "Number of Unsafe Action": count_unsafe_action, "Number of Unsafe State": count_unsafe_to_static_obstacles, "done": done,
                     "Number of Dynamic Agents": num_agents_tracked, 
                     "Selected Action": action, "Disallowed Actions": [pomcp.pomdp.actions[idx] for idx in pomcp.root.illegalActionIndexes],
                     "Estimated Regions": constraints[cur_time + 1], "Dynamic Agents Prediction": estimation_moving_agents[cur_time]
@@ -188,11 +187,15 @@ def test(scene, shieldLevel, target_failure_prob_delta, prediction_length, histo
                 cur_time += 1
                 continue
 
+            if cur_min_distance < safe_distance:
+                count_unsafe_to_dynamic_agents += 1
+
+            if (state_ground_truth[0], state_ground_truth[1]) in pomcp.pomdp.obstacles:
+                count_unsafe_to_static_obstacles += 1
+
             ACP_step = pomdp.build_restrictive_region(estimation_moving_agents[cur_time], constraints[cur_time+1], H, safe_distance)
             obs_current_node = pomcp.get_observation(state_ground_truth)
             # t1 = time.time()
-            # print("ACP", ACP_step)
-            # obs_mdp, Winning_obs, A_valid \
             pomcp.pomdp.online_compute_winning_region(obs_current_node, AccStates, observation_successor_map, H, ACP_step)
             # t2 = time.time()
             # print("time for winning", t2 - t1)
@@ -207,6 +210,7 @@ def test(scene, shieldLevel, target_failure_prob_delta, prediction_length, histo
                     actionIndex = random.choice(pomcp.pomdp.preferred_actions)
                 else:
                     actionIndex = random.choice([idx for idx in range(len(pomcp.pomdp.actions))])
+            
             # t3 = time.time()
             # print("time for actiong", t3 - t2)
             action = pomcp.pomdp.actions[actionIndex]
@@ -215,6 +219,7 @@ def test(scene, shieldLevel, target_failure_prob_delta, prediction_length, histo
             discount *= pomcp.gamma
             cumulative_undiscounted_reward += reward
             ############3
+            
             data = {
                 "Episode": episode_index, "Current Time Step": cur_time, "Action Step": action_step, "Clock Time": time.time() - clock_time,
                 "Shield Level": shieldLevel, "Look-back Length": history_length, "Predict Horizon": prediction_length, 
@@ -228,30 +233,29 @@ def test(scene, shieldLevel, target_failure_prob_delta, prediction_length, histo
                 "minX": pomcp.pomdp.minX, "minY": pomcp.pomdp.minY,
                 "maxX": pomcp.pomdp.maxX, "maxY": pomcp.pomdp.maxY,
                 "Stacic Obstacles": pomcp.pomdp.obstacles,  "Refule Stations":pomcp.pomdp.refule_stations, "Rocks": pomcp.pomdp.rocks,
-                "Number of Unsafe Action": count_unsafe_action, "Number of Unsafe State": count_unsafe_state, "done": done,
+                "Number of Unsafe Action": count_unsafe_action, "Number of Unsafe State": count_unsafe_to_static_obstacles, "done": done,
                 "Number of Dynamic Agents": num_agents_tracked, 
                 "Selected Action": action, "Disallowed Actions": [pomcp.pomdp.actions[idx] for idx in pomcp.root.illegalActionIndexes],
                 "Estimated Regions": constraints[cur_time + 1], "Dynamic Agents Prediction": estimation_moving_agents[cur_time]
             }
             step_record.append(data)
+
             action_step += 1
             next_state_ground_truth = pomcp.step(state_ground_truth, actionIndex)
             obs_nxt_node = pomcp.get_observation(next_state_ground_truth)
             pomcp.update(actionIndex, obs_nxt_node)
-            print("step,", action_step, "cur", cur_time, "state", state_ground_truth,"action", action)
+            if print_along: print("step,", action_step, "cur", cur_time, "state", state_ground_truth,"action", action)
             if plot_along: plot_figure_from_data(data, file_path.replace("results", "figures") + "/Episode-{}/".format(episode_index))
             state_ground_truth = next_state_ground_truth
-            # pomcp.pomdp.restore_states_from_change(observation_state_map_change_record, state_observation_map_change_record )                    
-            # print(pomcp.pomdp.observation_state_map == pomcp.pomdp.observation_state_map_default, pomcp.pomdp.state_observation_map == pomcp.pomdp.state_observation_map_default )
             cur_time += 1
         
-        step_file = os.path.join(file_path, "Episode-{}.pkl".format(episode_index) )
-        with open(step_file, 'wb') as file:
-            pickle.dump(step_record, file)
+        step_file = os.path.join(file_path, "Episode-{}.pkl".format(episode_index))
+        with open(step_file, 'wb') as file: pickle.dump(step_record, file)
 
         # episode_log = pd.concat([pd.DataFrame([dt], columns = dt.keys()) for dt in step_record], ignore_index=True)
         # episode_log.to_csv(file_path + "Episode-{}.csv".format(episode_index))
         episode_min_dist = min([r["Current Minimum Distance to Agents"] for r in step_record])
+
         index_of_action_step_1 = -1
         for k, r in enumerate(step_record):
             if k+1 < len(step_record) and step_record[k+1]["Action Step"] == 1:
@@ -265,18 +269,23 @@ def test(scene, shieldLevel, target_failure_prob_delta, prediction_length, histo
             "Failure Rate": target_failure_prob_delta, "ACP Learning": acp_learing_gamma, "Safe Distance": safe_distance,
             "Reached Target": 1 if done else 0,
             "Minimum Distance to Agents": episode_min_dist,
-            "Number of Unsafe State": count_unsafe_state,
+            "Number of Action Steps": action_step,
+            "Number of times being unsafe to static obstacles": count_unsafe_to_static_obstacles,
+            "Number of times being unsafe to dynamic agents": count_unsafe_to_dynamic_agents,
+            "Percentage of time being safe to static agents": 1 - count_unsafe_to_static_obstacles / action_step, 
+            "Percentage of time being safe to dynamic agents": 1 - count_unsafe_to_dynamic_agents / action_step,
             "Number of Unsafe Action": count_unsafe_action,
             "Cumulative Discounted Reward": cumulative_discounted_reward,
             "Cumulative Undiscounted Reward": cumulative_undiscounted_reward,
             "Max Step": max_steps,
             "Number of Time Steps": cur_time,
-            "Number of Action Steps": action_step,
             "Time spent in seconds": step_record[-1]["Clock Time"],
             "Action Time spent in seconds": action_time_spent,
             "Action Time spent per action in seconds": action_time_spent / action_step, 
             "POMCP Number of Simulations": pomcp.numSimulations,
             "POMCP constant": pomcp.c,
+            "POMCP pomcp_maxDepth": pomcp.maxDepth,
+            "POMCP preferred action": pomcp.pomdp.preferred_actions,
         }
         
         results.append(pd.DataFrame([experiment_data], columns = experiment_data.keys()))
@@ -285,25 +294,28 @@ def test(scene, shieldLevel, target_failure_prob_delta, prediction_length, histo
     result.to_csv(result_file)
 
 if __name__ == "__main__":
-
-    for num_agents_tracked in [3,5,7]:
-        test(scene= "ETH", shieldLevel = 0, target_failure_prob_delta = 0.05, prediction_length = 3,
-                    history_length = 4,  num_agents_tracked = num_agents_tracked, num_episodes = 100, max_steps = 200, explore_constant = 250,
-                    plot_along= False)
-        
-        for delta in [0.05, 0.1, 0.2]:
-            for H in [4, 6, 8]:
-                test(scene= "ETH", shieldLevel = 1, target_failure_prob_delta = delta, prediction_length = H,
-                        history_length = 4,  num_agents_tracked = num_agents_tracked, num_episodes = 100, max_steps = 200, explore_constant = 250,
-                        plot_along= False)
-    # for delta in [0.05, 0.2]:
-    #     for H in [3, 5]:
-    #         test(scene= "ETH", shieldLevel = 1, target_failure_prob_delta = delta, prediction_length = H,
-    #             history_length= 4,  num_agents_tracked = 5, num_episodes = 100, max_steps = 200, explore_constant = 250)
-
+    # for H in [4]:
+    #     for num_agents_tracked in[3, 5, 7]:
+    #         for delta in [0.05]:
+    #             test(scene= "ETH", shieldLevel = 1, target_failure_prob_delta = delta, prediction_length = H,
+    #                     history_length = 4,  num_agents_tracked = num_agents_tracked, num_episodes = 100, max_steps = 500, explore_constant = 250,
+    #                     plot_along= False)
+            # for delta in [0.1]:
+            #     test(scene= "ETH", shieldLevel = 1, target_failure_prob_delta = delta, prediction_length = H,
+            #             history_length = 4,  num_agents_tracked = num_agents_tracked, num_episodes = 100, max_steps = 500, explore_constant = 250,
+            #             plot_along= False)
+            # for delta in [0.2]:
+            #     test(scene= "ETH", shieldLevel = 1, target_failure_prob_delta = delta, prediction_length = H,
+            #             history_length = 4,  num_agents_tracked = num_agents_tracked, num_episodes = 100, max_steps = 500, explore_constant = 250,
+            #             plot_along= False)
+    scene2 = 'ETH'
+    test(scene= scene2, shieldLevel = 1, target_failure_prob_delta = 0.1, prediction_length = 3,
+                history_length = 4,  num_agents_tracked = 2, num_episodes = 1, max_steps = 300, explore_constant = 250,
+                plot_along = True, pomcp_maxDepth = 200, print_along=True
+                )
     # scene2 = 'SDD-bookstore-video1'
-    # test(scene= scene2, shieldLevel = 1, target_failure_prob_delta = 0.1, prediction_length = 5,
-    #             history_length = 4,  num_agents_tracked = 2, num_episodes = 1, max_steps = 200, explore_constant = 250,
-    #             plot_along = True, 
+    # test(scene= scene2, shieldLevel = 1, target_failure_prob_delta = 0.1, prediction_length = 3,
+    #             history_length = 4,  num_agents_tracked = 2, num_episodes = 1, max_steps = 500, explore_constant = 100,
+    #             plot_along = True, pomcp_maxDepth = 200
     #             )
     pass
