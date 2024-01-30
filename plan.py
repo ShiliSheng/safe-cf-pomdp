@@ -35,7 +35,9 @@ def get_min_distance(state_ground_truth, Y_cur_agents):
 def test(scene, shieldLevel, target_failure_prob_delta, prediction_length, history_length = 4,
         num_agents_tracked = 3, num_episodes = 20, max_steps = 200,
         explore_constant = 100, plot_along = False, pomcp_maxDepth = 100, print_along = False,
-        pomcp_gamma = 0.99):
+        pomcp_gamma = 0.99, pomcp_numSimulation = 2 ** 12, pomcp_init_R_max = 0,
+        safe_distance = 0.5
+        ):
     log_time = f"{datetime.now().strftime('%Y-%m-%d-%H-%M')}"
 
     #Settings for LSTM trajectory prediction
@@ -54,7 +56,6 @@ def test(scene, shieldLevel, target_failure_prob_delta, prediction_length, histo
     # target_failure_prob_delta
 
     acp_learing_gamma = 0.2
-    safe_distance = 0.5
 
     pomdp = create_scenario(scene)
     model_name = pomdp.model_name
@@ -70,7 +71,10 @@ def test(scene, shieldLevel, target_failure_prob_delta, prediction_length, histo
     for episode_index in range(num_episodes):
         if print_along: print(file_path, episode_index)
         step_record = []
-        pomcp = POMCP(pomdp, shieldLevel, prediction_model.prediction_length, explore_constant, maxDepth = pomcp_maxDepth, gamma=pomcp_gamma)
+        pomcp = POMCP(pomdp, shieldLevel, prediction_model.prediction_length,
+                       explore_constant, maxDepth = pomcp_maxDepth, 
+                       gamma=pomcp_gamma, numSimulations = pomcp_numSimulation, 
+                       pomcp_init_R_max = pomcp_init_R_max)
         pomcp.reset_root()
         motion_mdp, AccStates = pomcp.pomdp.compute_accepting_states() 
         observation_successor_map = pomcp.pomdp.compute_H_step_space(H)
@@ -244,7 +248,7 @@ def test(scene, shieldLevel, target_failure_prob_delta, prediction_length, histo
             next_state_ground_truth = pomcp.step(state_ground_truth, actionIndex)
             obs_nxt_node = pomcp.get_observation(next_state_ground_truth)
             pomcp.update(actionIndex, obs_nxt_node)
-            if print_along: print("step,", action_step, "cur", cur_time, "state", state_ground_truth,"action", action)
+            if print_along: print("step,", action_step, "cur", cur_time, "state", state_ground_truth,"action", action, cur_min_distance)
             if plot_along: plot_figure_from_data(data, file_path.replace("results", "figures") + "/Episode-{}/".format(episode_index))
             state_ground_truth = next_state_ground_truth
             cur_time += 1
@@ -283,7 +287,7 @@ def test(scene, shieldLevel, target_failure_prob_delta, prediction_length, histo
             "Action Time spent in seconds": action_time_spent,
             "Action Time spent per action in seconds": action_time_spent / action_step, 
             "POMCP Number of Simulations": pomcp.numSimulations,
-            "POMCP constant": pomcp.c,
+            "POMCP constant": pomcp.constant,
             "POMCP pomcp_maxDepth": pomcp.maxDepth,
             "POMCP preferred action": pomcp.pomdp.preferred_actions,
         }
@@ -293,29 +297,69 @@ def test(scene, shieldLevel, target_failure_prob_delta, prediction_length, histo
     result_file = os.path.join(file_path, "summary.csv")
     result.to_csv(result_file)
 
-if __name__ == "__main__":
-    # for H in [4]:
-    #     for num_agents_tracked in[3, 5, 7]:
-    #         for delta in [0.05]:
-    #             test(scene= "ETH", shieldLevel = 1, target_failure_prob_delta = delta, prediction_length = H,
-    #                     history_length = 4,  num_agents_tracked = num_agents_tracked, num_episodes = 100, max_steps = 500, explore_constant = 250,
-    #                     plot_along= False)
-            # for delta in [0.1]:
-            #     test(scene= "ETH", shieldLevel = 1, target_failure_prob_delta = delta, prediction_length = H,
-            #             history_length = 4,  num_agents_tracked = num_agents_tracked, num_episodes = 100, max_steps = 500, explore_constant = 250,
-            #             plot_along= False)
-            # for delta in [0.2]:
-            #     test(scene= "ETH", shieldLevel = 1, target_failure_prob_delta = delta, prediction_length = H,
-            #             history_length = 4,  num_agents_tracked = num_agents_tracked, num_episodes = 100, max_steps = 500, explore_constant = 250,
-            #             plot_along= False)
+def test_ETH():
+    for H in [4]:
+        for num_agents_tracked in[3, 5, 7]:
+            for delta in [0.05]:
+                test(scene= "ETH", shieldLevel = 1, target_failure_prob_delta = delta, prediction_length = H,
+                        history_length = 4,  num_agents_tracked = num_agents_tracked, num_episodes = 100, max_steps = 500, explore_constant = 250,
+                        plot_along= False)
+            for delta in [0.1]:
+                test(scene= "ETH", shieldLevel = 1, target_failure_prob_delta = delta, prediction_length = H,
+                        history_length = 4,  num_agents_tracked = num_agents_tracked, num_episodes = 100, max_steps = 500, explore_constant = 250,
+                        plot_along= False)
+            for delta in [0.2]:
+                test(scene= "ETH", shieldLevel = 1, target_failure_prob_delta = delta, prediction_length = H,
+                        history_length = 4,  num_agents_tracked = num_agents_tracked, num_episodes = 100, max_steps = 500, explore_constant = 250,
+                        plot_along= False)
+
     scene2 = 'ETH'
-    test(scene= scene2, shieldLevel = 1, target_failure_prob_delta = 0.1, prediction_length = 3,
+    test(scene= scene2, shieldLevel = 0, target_failure_prob_delta = 0.1, prediction_length = 3,
                 history_length = 4,  num_agents_tracked = 2, num_episodes = 1, max_steps = 300, explore_constant = 250,
-                plot_along = True, pomcp_maxDepth = 200, print_along=True
+                plot_along = False, pomcp_maxDepth = 200, print_along=True, pomcp_gamma=0.95
                 )
-    # scene2 = 'SDD-bookstore-video1'
-    # test(scene= scene2, shieldLevel = 1, target_failure_prob_delta = 0.1, prediction_length = 3,
-    #             history_length = 4,  num_agents_tracked = 2, num_episodes = 1, max_steps = 500, explore_constant = 100,
-    #             plot_along = True, pomcp_maxDepth = 200
+
+def test_bookstore():
+    scene2 = 'SDD-bookstore-video1'
+    test(scene= scene2, shieldLevel = 1, target_failure_prob_delta = 0.1, prediction_length = 3,
+                history_length = 4,  num_agents_tracked = 30, num_episodes = 1, max_steps = 500, explore_constant = 10,
+                plot_along = 1, pomcp_maxDepth = 200, print_along=1, pomcp_gamma=0.95,
+                pomcp_numSimulation=2**12, pomcp_init_R_max = 0, safe_distance = 3
+                )
+    
+    # test(scene= scene2, shieldLevel = 0, target_failure_prob_delta = 0.1, prediction_length = 3,
+    #             history_length = 4,  num_agents_tracked = 5, num_episodes = 100, max_steps = 500, explore_constant = 10,
+    #             plot_along = 0, pomcp_maxDepth = 200, print_along=0, pomcp_gamma=0.95,
+    #             pomcp_numSimulation=2**12, pomcp_init_R_max = 0
     #             )
+    
+    # test(scene= scene2, shieldLevel = 0, target_failure_prob_delta = 0.1, prediction_length = 3,
+    #             history_length = 4,  num_agents_tracked = 7, num_episodes = 100, max_steps = 500, explore_constant = 10,
+    #             plot_along = 0, pomcp_maxDepth = 200, print_along=0, pomcp_gamma=0.95,
+    #             pomcp_numSimulation=2**12, pomcp_init_R_max = 0
+    # )
     pass
+
+def test_deathCircle():
+    scene2 = 'SDD-deathCircle-video1'
+    test(scene= scene2, shieldLevel = 1, target_failure_prob_delta = 0.1, prediction_length = 3,
+                history_length = 4,  num_agents_tracked = 15, num_episodes = 1, max_steps = 500, explore_constant = 50,
+                plot_along = 1, pomcp_maxDepth = 200, print_along = 1, pomcp_gamma=0.95,
+                pomcp_numSimulation=2**12, pomcp_init_R_max = 0, safe_distance = 1
+                )
+    
+    # test(scene= scene2, shieldLevel = 0, target_failure_prob_delta = 0.1, prediction_length = 3,
+    #             history_length = 4,  num_agents_tracked = 5, num_episodes = 100, max_steps = 500, explore_constant = 10,
+    #             plot_along = 0, pomcp_maxDepth = 200, print_along=0, pomcp_gamma=0.95,
+    #             pomcp_numSimulation=2**12, pomcp_init_R_max = 0
+    #             )
+    
+    # test(scene= scene2, shieldLevel = 0, target_failure_prob_delta = 0.1, prediction_length = 3,
+    #             history_length = 4,  num_agents_tracked = 7, num_episodes = 100, max_steps = 500, explore_constant = 10,
+    #             plot_along = 0, pomcp_maxDepth = 200, print_along=0, pomcp_gamma=0.95,
+    #             pomcp_numSimulation=2**12, pomcp_init_R_max = 0
+    # )
+    pass
+
+if __name__ == "__main__":
+    test_deathCircle()
