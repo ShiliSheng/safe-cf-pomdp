@@ -100,11 +100,11 @@ def plot_figure_from_data(data, figure_path):
         plt.text(-0.5, -3, info)
         info = "Minimum distance to pedestrains: {}".format(round(cur_min_distance, 2))
         plt.text(-0.5, -4, info)
-    elif maxY < 70:
+    elif maxY < 90:
         info = "Step: {}, Action: {}, Disallowed actions: {}".format(cur_time, action, disallowed_actions)
-        plt.text(-0.5, -7, info)
+        plt.text(-0.5, -8, info)
         info = "Minimum distance to pedestrains: {}".format(round(cur_min_distance, 2))
-        plt.text(-0.5, -11, info)
+        plt.text(-0.5, -12, info)
 
 
     if figure_path[-1] != '/':
@@ -123,11 +123,21 @@ def plot_figure(path):
             plot_figure_from_data(row, figure_path)
         plot_gif(figure_path)
 
+def plot_scene(scene):
+    for setting in os.listdir(scene):
+        print(setting)
+        run = scene + setting
+        if run[-1] != '/': run += "/"
+        print(run)
+        if os.path.isdir(run):
+            plot_figure(run)
 
 if __name__ == "__main__":
-    scene = './results/Obstacle-ETH-0-0-22-22/'
-    # setting = "shield_1-lookback_4-prediction_8-failure-0.1-agents-5-2024-01-20-07-07/"
-    setting = 'shield_1-lookback_4-prediction_4-failure-0.05-agents-5-2024-01-20-00-00/'
-    path = os.path.join(scene, setting)
-    plot_figure(path)
+    # ETH = './results/Obstacle-ETH-0-0-22-22/'
+    # plot_scene(ETH)
+    # bookstore = './results/Obstacle-SDD-bookstore-video1-0-0-50-45/'
+    # plot_scene(bookstore)
+    deathCircle = './results/Obstacle-SDD-deathCircle-video1-0-0-50-60/'
+    plot_scene(deathCircle)
 
+    pass
