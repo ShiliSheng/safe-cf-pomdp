@@ -409,7 +409,8 @@ def compute_dfa():
 def create_scenario_obstacle(minX, minY, maxX, maxY, 
                              initial_belief_support,
                              targets, end_states,
-                             obstacles, model_name, preferred_actions):
+                             obstacles, model_name, preferred_actions,
+                             state_reward = defaultdict(int)):
     # 
     # ------- states
     robot_nodes = set()
@@ -447,11 +448,8 @@ def create_scenario_obstacle(minX, minY, maxX, maxY,
     for state in initial_belief_support:
         initial_belief[state] = 1 / len(initial_belief_support)   
 
-    state_reward = defaultdict(int)
-    for state in targets:
-        state_reward[state] += 1000
-    for state in obstacles:
-        state_reward[state] += -10
+    
+
 
     pomdp = Model(robot_nodes, actions, robot_edges, cost,
                     initial_belief, targets, end_states, 
@@ -477,6 +475,8 @@ def create_scenario_obstacle(minX, minY, maxX, maxY,
 
 def create_scenario(scene):
     # U = actions = ['N', 'S', 'E', 'W']
+    state_reward = defaultdict(int)
+
     if scene == 'ETH':
         minX, minY, maxX, maxY = 0, 0, 22 , 22
         initial_belief_support = [(0, 0)]
@@ -484,6 +484,7 @@ def create_scenario(scene):
         targets.add((20, 22))
         end_states = set(list(targets))
         obstacles = set()
+        preferred_actions = [0, 2]
         for x in range(6, maxX - 5):
             obstacles.add((x, 3))
             obstacles.add((x, 19))
@@ -497,11 +498,15 @@ def create_scenario(scene):
             obstacles.add((5, y))
             obstacles.add((maxX-5, y))
 
-        preferred_actions = [0, 2]
+        for state in targets:
+            state_reward[state] += 1000
+        for state in obstacles:
+            state_reward[state] += -10
+
     if scene == 'SDD-bookstore-video1':
-        minX, minY, maxX, maxY = 0, 0, 80, 80
+        minX, minY, maxX, maxY = 0, 0, 50, 45
         preferred_actions = [1, 2]
-        initial_belief_support = [(12, maxY)]
+        initial_belief_support = [(0, maxY)]
         targets = set([(maxX, 0), (maxX - 1, 0), (maxX, 1), (maxX - 1, 1)])
         end_states = set(list(targets))
         obstacles = set()
@@ -510,53 +515,68 @@ def create_scenario(scene):
                 obstacles.add((x, y))
             for y in range(25, 34, 1):
                 obstacles.add((x, y))
-        for x in range(0, 8, 1):
-            for y in range(40, maxY+1, 1):
-                obstacles.add((x, y))
-        
-        for y in range(8, maxY, 8):
-            end = 65 if y < 80 else maxX
-            for x in range(25, end + 1):
-                obstacles.add((x, y))
 
-        for y in range(maxY - 8, maxY + 1):
+        for y in range(maxY - 5, maxY + 1):
             for x in range(25, maxX + 1):
                 obstacles.add((x, y))
+        # for y in [12, 28]:
+        #     end = 60 if y < 80 else maxX
+        #     for x in range(30, end - 10):
+        #         obstacles.add((x, y))
+        ob = []
+        for x in range(10, maxX):
+            for y in range(10, maxY):
+                ob.append((x, y))
+
+        random.seed(42)
+        for (x, y) in random.choices(ob, k = 10):
+            obstacles.add((x, y))   
+
+        for state in targets:
+            state_reward[state] += 1000
+        for state in obstacles:
+            state_reward[state] += -10
 
     if scene == 'SDD-deathCircle-video1':
-        minX, minY, maxX, maxY = 0, 0, 60, 80
-        preferred_actions = [0]
-        initial_belief_support = [(30, 0)]
-        targets = set([(30, maxY), (30, maxY-1), (30-1, maxY), (30-1, maxY-1), ])
+        minX, minY, maxX, maxY = 0, 0, 50, 60
+        # [NSEW]
+        preferred_actions = [0, 3]
+        # targets = set([(30, maxY//2), (30, maxY//2-1), (30-1, maxY//2), (30-1, maxY//2-1), ])
+        initial_belief_support = [(maxX, 20)]
+        targets = set([(0, maxY)])
         end_states = set(list(targets))
         obstacles = set()
         
-        for y in [10, 20, 30, 50, 60]:
-            for x in range(0, 21):
-                obstacles.add((x, y))
-            for x in range(40, maxX + 1):
+        for x in range(5):
+            for y in range(5):
                 obstacles.add((x, y))
         
-        for y in range(0, 10):
-            for x in range(0, 21):
-                obstacles.add((x, y))
-            for x in range(40, maxX + 1):
+        for x in range(45, maxX + 1):
+            for y in range(55, maxY + 1):
                 obstacles.add((x, y))
         
-        for y in range(70, 81):
-            for x in range(0, 21):
-                obstacles.add((x, y))
-            for x in range(40, maxX + 1):
-                obstacles.add((x, y))
-        
-        for x in range(25, 36):
-            for y in range(35, 46):
-                obstacles.add((x, y))
-        
+        ob  = []
+        for x in range(40):
+            for y in range(20, 50):
+                ob.append((x, y))
+        random.seed(42)
+        for (x, y) in random.choices(ob, k = 10):
+            obstacles.add((x, y))
+
+        for state in targets:
+            state_reward[state] += 1000
+        for state in obstacles:
+            state_reward[state] += -10
+
+    for (x, y) in targets:
+            if (x, y) in obstacles:
+                obstacles.remove((x, y))
+
     pomdp = create_scenario_obstacle(minX, minY, maxX, maxY, 
                              initial_belief_support,
                              targets, end_states,
-                             obstacles, scene, preferred_actions)
+                             obstacles, scene, preferred_actions,
+                             state_reward)
     print("==", pomdp.obstacles)
     pomdp.write_model()
     return pomdp
@@ -598,16 +618,8 @@ def test_scenario(pomdp):
     #             print("error dynamic obstacle in Winning Region", (obstacle, i))
 
 if __name__ == "__main__":
-    pomdp = create_scenario('ETH')
-    print("obstacles...")
-    # print(sorted(pomdp.obstacles), (11, 7) in pomdp.obstacles)
-    # pomdp = create_scenario("SDD-bookstore-video1")
+    pomdp = create_scenario("SDD-bookstore-video1")
     # pomdp = create_scenario("SDD-deathCircle-video1")
     test_scenario(pomdp)
-    # pomdp.plot_map(True)
-    # pomdp = create_scenario_obstacle()
-    # pomdp.write_model()
-    # print(pomdp.obstacles)
-    # create_scenario_refuel()
-    # create_scenario_rock()
+    pomdp.plot_map(True)
     pass
