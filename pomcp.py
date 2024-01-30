@@ -102,6 +102,9 @@ class POMCPNode:
         if qchild:
             self.v -= qchild.v
             self.n -= qchild.n
+            if self.n < 0:
+                self.v = 0
+                self.n = 0
         del self.children[index]
         if len(self.children) == 0:
             if not self.parent: # already root:
@@ -149,7 +152,7 @@ class POMCPNode:
 class POMCP:
     def __init__(self, pomdp, shieldLevel = 0, shieldHorizon = 5,  
                  constant = 10, maxDepth = 100, gamma = 0.99, 
-                 numSimulations = 2 ** 12,
+                 numSimulations = 2 ** 12, pomcp_init_R_max = 0,
                  ):
 
         # def __init__(self, initial_belief, actions, robot_state_action_map, state_to_observation, state_action_reward_map, 
@@ -165,7 +168,7 @@ class POMCP:
         self.K = 10000
         self.TreeDepth = 0
         self.PeakTreeDepth = 0
-        self.c = constant
+        self.constant = constant
         self.maxDepth = maxDepth
         self.verbose = 0
         self.pomdp = pomdp
@@ -186,7 +189,7 @@ class POMCP:
         self.initializePOMCP()
         self.R_max = float("-inf")
         self.R_min = float("inf")
-        
+        self.pomcp_init_R_max = pomcp_init_R_max
 
     def initializePOMCP(self):
         self.TreeDepth = 0
@@ -198,7 +201,7 @@ class POMCP:
     def fastUCB(self, N, n, logN):
         if N < 1000 and n < 100: return self.UCB[N][n]
         if n == 0: return float("inf")
-        return (logN / n) ** 0.5 * self.c
+        return (logN / n) ** 0.5 * self.constant
     
     def initialUCB(self, UCB_N, UCB_n):
         self.UCB = [[0] * UCB_n for _ in range(UCB_N)]
@@ -267,30 +270,6 @@ class POMCP:
         vnode.clear()
         self.root = vnode
 
-    # def Update(self, actionIndex, obs):
-    #     beliefs = defaultdict(int)
-    #     qnode = self.root.get_child_by_action_index(actionIndex)
-    #     isVnode = qnode.check_child_by_observation_index(obs)
-    #     if isVnode:
-    #         vnode = qnode.get_child_by_observation_index(obs)
-    #         beliefs = vnode.belief.copy()
-    #     if not beliefs and (not isVnode or not qnode.get_child_by_observation_index(obs).belief):
-    #         return False
-        
-    #     if isVnode and qnode.get_child_by_observation_index(obs).belief:
-    #         vnode = qnode.get_child_by_observation_index(obs)
-    #         if vnode.belief:
-    #             state = vnode.belief.keys()[0]
-    #     else:
-    #         state = beliefs.keys()[0]
-        
-    #     newRoot = POMCPNode()
-    #     self.expand(newRoot, state)
-    #     newRoot.belief = beliefs
-    #     self.invigorate_belief(self.root, newRoot, actionIndex, obs)
-    #     self.root = newRoot
-    #     return True
-
     def get_default_action(self):
         return self.pompd.actions[0]
 
@@ -320,11 +299,55 @@ class POMCP:
         for actionIndex in self.root.children:
             qnode = self.root.get_child_by_action_index(actionIndex)
             # print("MCTS",actionIndex, qnode.v, qnode.n,qnode.v / (1+qnode.n) )
-        if self.verbose >= 1:
-            print("finishing all simulations", self.numSimulations)
+        # if self.verbose >= 1:
+        #     print("finishing all simulations", self.numSimulations)
             
     def check_winning(self, state, time_count):
         return self.pomdp.check_winning(state, time_count)
+    
+    def get_observation_from_beleif(self, belief):
+        for state in belief:
+            return self.get_observation(state)
+
+    def expand(self, parent, state):
+        available_actions = self.get_legal_actions(state)
+        for actionIndex in available_actions:
+            if self.shieldLevel >= 1 and parent.is_action_index_illegal(actionIndex):
+                continue
+            qnode = POMCPNode()
+            qnode.set_h_action(True)
+            qnode.h = actionIndex
+            qnode.parent = parent
+            parent.add_child(qnode, actionIndex)
+            # TODO
+            # if self.shieldLevel == 1 and self.TreeDepth == 0 and self.isActionShieldedForNode(parent, actionIndex):
+            #     parent.add_illegal_action_index(actionIndex)
+            
+            # if self.constant != 0:
+            #     if actionIndex in self.pomdp.preferred_actions:
+            #         qnode.v = self.pomcp_init_R_max
+            #         qnode.n = 10
+
+        if not parent.children:
+            # print("add default available actions")
+            for actionIndex in available_actions:
+                qnode = POMCPNode()
+                qnode.set_h_action(True)
+                qnode.h = actionIndex
+                qnode.parent = parent
+                parent.add_child(qnode, actionIndex)
+    
+    def expand_node(self, state):
+        vnode = POMCPNode()
+        # vnode.belief[state] += 1 # node should not be added into belief before checking.
+        available_actions = self.get_legal_actions(state)
+        for actionIndex in available_actions:
+            qnode = POMCPNode()
+            qnode.h = actionIndex
+            qnode.set_h_action(True)
+            qnode.parent = vnode
+            vnode.add_child(qnode, actionIndex)
+        return vnode
 
     def simulateV(self, state, vnode):
         if (self.TreeDepth >= self.maxDepth): 
@@ -353,10 +376,6 @@ class POMCP:
         vnode.increaseV(total_reward)
         return total_reward
     
-    def get_observation_from_beleif(self, belief):
-        for state in belief:
-            return self.get_observation(state)
-        
     def simulateQ(self, state, qnode, actionIndex):
         delayed_reward = 0
         nextState = self.step(state, actionIndex)
@@ -374,9 +393,17 @@ class POMCP:
             vnode = qnode.get_child_by_observation_index(observation)
         
         para_expand_count = 1
+        
+        # if (not vnode and (not done) and (qnode.n >= para_expand_count)):
+        #     # vnode = POMCPNode()
+        #     vnode = self.expand_node(state)
+        #     vnode.h = observation
+        #     vnode.parent = qnode
+        #     qnode.add_child(vnode, observation)
+
         if (not vnode and (not done) and (qnode.n >= para_expand_count)):
-            # vnode = POMCPNode()
-            vnode = self.expand_node(state)
+            vnode = POMCPNode()
+            self.expand(vnode, state)
             vnode.h = observation
             vnode.parent = qnode
             qnode.add_child(vnode, observation)
@@ -404,30 +431,6 @@ class POMCP:
         obs = vnode.getH()
         return self.is_winning((obs, time))  
 
-
-    def expand(self, parent, state):
-        availableActions = self.get_legal_actions(state)
-        for actionIndex in availableActions:
-            if self.shieldLevel >= 1 and parent.is_action_index_illegal(actionIndex):
-                continue
-            newChild = POMCPNode()
-            newChild.set_h_action(True)
-            newChild.h = actionIndex
-            newChild.parent = parent
-            parent.add_child(newChild, actionIndex)
-            # TODO
-            # if self.shieldLevel == 1 and self.TreeDepth == 0 and self.isActionShieldedForNode(parent, actionIndex):
-            #     parent.add_illegal_action_index(actionIndex)
-        
-        if not parent.children:
-            # print("add default available actions")
-            for actionIndex in availableActions:
-                newChild = POMCPNode()
-                newChild.set_h_action(True)
-                newChild.h = actionIndex
-                newChild.parent = parent
-                parent.add_child(newChild, actionIndex)
-    
     def is_action_index_shielded_for_node(self, parent, actionIndex): 
         if not self.pomdp.winning_obs:
             return False
@@ -450,18 +453,6 @@ class POMCP:
     def get_legal_actions(self, state):
         return set(self.pomdp.robot_state_action_map[state].keys())
 
-    def expand_node(self, state):
-        vnode = POMCPNode()
-        # vnode.belief[state] += 1 # node should not be added into belief before checking.
-        available_actions = self.get_legal_actions(state)
-        for actionIndex, action in enumerate(self.pomdp.actions):
-            if actionIndex not in available_actions: continue 
-            qnode = POMCPNode()
-            qnode.h = actionIndex
-            qnode.set_h_action(True)
-            qnode.parent = vnode
-            vnode.add_child(qnode, actionIndex)
-        return vnode
     
     def step_reward(self, state, actionIndex):
         if state not in self.pomdp.state_action_reward_map:
@@ -650,11 +641,12 @@ def replay(H_default = -1):
     
     #shieldLevel = 0, shieldHorizon = 5,  constant = 10, maxDepth = 100, numSimulations = 2 ** 12):
 
-def test_const(scene_name):
+def test_const(scene_name,pomcp_numSimulation):
     pomdp = create_scenario(scene_name)
     # pomdp.preferred_actions = [] # ? do we need this
     print(pomdp.initial_belief)
-    pomcp = POMCP(pomdp, shieldLevel=0, shieldHorizon=2, constant=0, maxDepth = 200, gamma=0.95)
+    pomcp = POMCP(pomdp, shieldLevel=0, shieldHorizon=2,
+                   constant=0, maxDepth = 200, gamma=0.95, numSimulations=pomcp_numSimulation)
     pomcp.reset_root()
     pomcp.select_action()
     print(pomcp.R_max, pomcp.R_min)
@@ -669,4 +661,7 @@ if __name__ == "__main__":
     #     result.append((h, res.count('E')))
     # print(result)
     # pass
-    test_const('ETH')
+    # test_const('ETH')
+    test_const('SDD-bookstore-video1', 2 ** 12)
+    # test_const('SDD-deathCircle-video1', 2 ** 12)
+    
