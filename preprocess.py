@@ -65,12 +65,23 @@ def create_test_dataset(raw_dataset_path, min_cooldown, max_cooldown):
     df = pd.read_csv(file)
     total_length = 3000
     cols = []
+    n_agents = 0
     for pid, group in df.groupby("id"):
+        if "death" in raw_dataset_path and (group['y'].max() > 50 or group['y'].min() < 20): 
+            continue
+        if "bookstore" in raw_dataset_path and (group['x'].min() > 45 ):
+            continue
         cols.append(str(pid) + 'x')
         cols.append(str(pid) + 'y')
+        n_agents += 1
     new_df = pd.DataFrame(columns = cols)
-
+    
+    print("number of agents", n_agents)
     for pid, group in df.groupby("id"):
+        if "death" in raw_dataset_path and (group['y'].max() > 50 or group['y'].min() < 20):
+            continue
+        if "bookstore" in raw_dataset_path and (group['x'].min() > 45):
+            continue
         trajectory_length = len(group)
         direction = 1
         cnt = 0
@@ -99,17 +110,16 @@ def split_train_validation_test(raw_dataset_path, testSize = 0.2, validationSize
     # preprocess_dataset()
     raw_dataset = pd.read_csv(os.path.join(raw_dataset_path, "rawdata.csv"))
     raw_dataset = filter_length(raw_dataset, min_length = 10)
-    print("xmin","xmax",raw_dataset.x.min(), raw_dataset.x.max(), raw_dataset.y.min(), raw_dataset.y.max())
-
+    print(raw_dataset_path, "xmin","xmax",raw_dataset.x.min(), raw_dataset.x.max(), raw_dataset.y.min(), raw_dataset.y.max())
+    
     train_validation_id, test_id = train_test_split(raw_dataset.id.unique(), test_size= testSize, random_state = 42)
+    train_id, validation_id = train_test_split(train_validation_id, test_size = validationSize, random_state = 42)
+    print("size of training, validation, test", len(train_id), len(validation_id), len(test_id))
     test_raw_dataset = raw_dataset[raw_dataset.id.isin(test_id)]
     test_raw_dataset.to_csv(os.path.join(raw_dataset_path, "rawdata_test.csv"))
-
-    train_id, validation_id = train_test_split(train_validation_id, test_size = validationSize, random_state = 42)
     train_raw_dataset = raw_dataset[raw_dataset.id.isin(train_id)]
     validation_raw_dataset = raw_dataset[raw_dataset.id.isin(validation_id)]
     
-    print("size of training, validation, test", len(train_id), len(validation_id), len(test_id))
 
     train_raw_dataset.to_csv(os.path.join(raw_dataset_path, "rawdata_train.csv"))
     validation_raw_dataset.to_csv(os.path.join(raw_dataset_path, "rawdata_validation.csv"))
@@ -239,11 +249,12 @@ def copy_and_rename_reference_images(folder_path, destination_path = "./OpenTraj
             shutil.copy(reference_path, new_path)
 
 if __name__ == "__main__":
-    preprocess_dataset()
+    # preprocess_dataset()
     # plot_heat_map(data_path = "./test_data/")
-    # # raw_dataset_path = './test_data/SDD-deathCircle-video0/'
     # raw_dataset_path = './test_data/ETH/'
-    # create_test_dataset(raw_dataset_path, min_cooldown=5, max_cooldown=20)
+    # raw_dataset_path = './test_data/SDD-deathCircle-video1/'
+    raw_dataset_path = './test_data/SDD-bookstore-video1/'
+    create_test_dataset(raw_dataset_path, min_cooldown=5, max_cooldown=20)
     # history_length = 4
     # prediction_length = 4
     # create_training_validation_dataset(raw_dataset_path, history_length, prediction_length)
