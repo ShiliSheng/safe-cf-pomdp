@@ -210,54 +210,56 @@ class Model:
         # Pian: can I comment out the code below? they seem unuseful? Yes, it's fine.
             # if not, there is a bug in Line 219, when o_node[0] is not in self.observation_state_map
 
-        # obs_initial_dict = obs_nodes_reachable[obs_initial_node_count]
-        # obs_initial_label = obs_initial_dict.keys()
+        obs_initial_dict = obs_nodes_reachable[obs_initial_node_count]
+        obs_initial_label = obs_initial_dict.keys()
         
-        # obs_edges = dict()
-        # for o_node in obs_nodes_reachable.keys():
-        #     oc = o_node[1]
-        #     support_set = list(self.observation_state_map[o_node[0]])
-        #     for node in support_set:  
-        #         for k, u in enumerate(U):
-        #             tnode_set = self.robot_state_action_map[node][k]
-        #             for ttnode in list(tnode_set.keys()):
-        #                 t_obs = self.state_observation_map[ttnode]
-        #                 if oc < H: 
-        #                     tnode = (t_obs, oc+1)
-        #                 else:
-        #                     tnode = (t_obs, oc)
-        #                 if tnode in obs_nodes_reachable:  
-        #                     obs_edges[(o_node, u, tnode)] = (1, C[k])
+        obs_edges = dict()
+        for o_node in obs_nodes_reachable.keys():
+            oc = o_node[1]
+            if o_node[0] not in self.observation_state_map:
+                pass
+            support_set = list(self.observation_state_map[o_node[0]])
+            for node in support_set:  
+                for k, u in enumerate(U):
+                    tnode_set = self.robot_state_action_map[node][k]
+                    for ttnode in list(tnode_set.keys()):
+                        t_obs = self.state_observation_map[ttnode]
+                        if oc < H: 
+                            tnode = (t_obs, oc+1)
+                        else:
+                            tnode = (t_obs, oc)
+                        if tnode in obs_nodes_reachable:  
+                            obs_edges[(o_node, u, tnode)] = (1, C[k])
 
-        # obs_mdp = Motion_MDP_label(obs_nodes_reachable, obs_edges, U, obs_initial_node_count, obs_initial_label)
+        obs_mdp = Motion_MDP_label(obs_nodes_reachable, obs_edges, U, obs_initial_node_count, obs_initial_label)
 
-        # #----
-        # self.successor_obs_mdp = dict()
-        # for node in obs_mdp:
-        #     self.successor_obs_mdp[node]= obs_mdp.successors(node)
+        #----
+        self.successor_obs_mdp = dict()
+        for node in obs_mdp:
+            self.successor_obs_mdp[node]= obs_mdp.successors(node)
 
-        # #----
+        #----
 
-        # A_valid = dict()
-        # for s in Winning_obs:
-        #     A_valid[s] = obs_mdp.nodes[s]['act'].copy()
-        #     if not A_valid[s]:
-        #         print("Isolated state")
+        A_valid = dict()
+        for s in Winning_obs:
+            A_valid[s] = obs_mdp.nodes[s]['act'].copy()
+            if not A_valid[s]:
+                print("Isolated state")
 
-        # for s in Winning_obs:
-        #     U_to_remove = set()
-        #     for u in A_valid[s]:
-        #         for t in obs_mdp.successors(s):
-        #             if ((u in list(obs_mdp[s][t]['prop'].keys())) and (t not in Winning_obs)):
-        #                 U_to_remove.add(u)
-        #     A_valid[s].difference_update(U_to_remove)
-        # print('Number of winning states in observation space: %s' % len(Winning_obs))
+        for s in Winning_obs:
+            U_to_remove = set()
+            for u in A_valid[s]:
+                for t in obs_mdp.successors(s):
+                    if ((u in list(obs_mdp[s][t]['prop'].keys())) and (t not in Winning_obs)):
+                        U_to_remove.add(u)
+            A_valid[s].difference_update(U_to_remove)
+        print('Number of winning states in observation space: %s' % len(Winning_obs))
 
-        # f_accept_observation = open('./pomdp_states/accept_observation.dat','w')
-        # for nd_id, nd in enumerate(Winning_obs):
-        #     # ts_node_id, ts_node_x, ts_node_y, ts_node_d
-        #     f_accept_observation.write('%s,%s,%s\n' %(nd[0], nd[1], A_valid[nd]))
-        # f_accept_observation.close()
+        f_accept_observation = open('./pomdp_states/accept_observation.dat','w')
+        for nd_id, nd in enumerate(Winning_obs):
+            # ts_node_id, ts_node_x, ts_node_y, ts_node_d
+            f_accept_observation.write('%s,%s,%s\n' %(nd[0], nd[1], A_valid[nd]))
+        f_accept_observation.close()
 
         
         # return obs_mdp, Winning_obs, A_valid
