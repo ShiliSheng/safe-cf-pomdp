@@ -136,6 +136,23 @@ class Model:
             return self.state_observation_map_dict_new[(state, oc)] in self.winning_obs
         return (self.state_observation_map[state], oc) in self.winning_obs
 
+    def check_winning_set(self, state_set, oc):
+        sets_list = [] 
+        for id, state in enumerate(state_set):
+            obs_set = self.state_observation_map_dict_new[(state, oc)]
+            print(obs_set)
+            sets_list.append(obs_set) 
+        common_obs = set.intersection(*sets_list)
+        print("Common observation: %s" %common_obs)
+        if len(common_obs) > 0:
+            for obs in common_obs:
+                if obs in self.winning_obs:
+                    return True               
+                else:
+                    return False
+        else:
+            return False
+
     def check_common_action(self, state_set, Avalid_states):
         sets_list = []
         for s in state_set:
@@ -224,8 +241,10 @@ class Model:
                         # observation_state_map_change_record.add(ws_node_count)
                         self.state_observation_map_change_record.add(state_node_count)
                         # observation_state_map_dict_new[ws_node_count] = [ws_node_count]     # 
-                        self.state_observation_map_dict_new[state_node_count] = ws_node_count       #
-                        self.winning_state_observation_map[state_node_count] = ws_node_count
+                        self.state_observation_map_dict_new[state_node_count] = set()
+                        self.winning_state_observation_map[state_node_count] = set()
+                        self.state_observation_map_dict_new[state_node_count].add(ws_node_count)       #
+                        self.winning_state_observation_map[state_node_count].add(ws_node_count)
                 if  len(o_node_not_obstacle) > 0:                
                     if len(SS_target_count) > 0 and len(o_node_not_target) > 0:
                         ws_node_count = (onode_count, 0)
@@ -233,9 +252,11 @@ class Model:
                         observation_else.add((onode_count, 0))
                         for fnode in o_node_not_target:   
                             state_node_count = (fnode, oc)                        
-                            self.state_observation_map_change_record.add(state_node_count)     # 
-                            self.state_observation_map_dict_new[state_node_count] = ws_node_count       #
-                            self.winning_state_observation_map[state_node_count] = ws_node_count
+                            self.state_observation_map_change_record.add(state_node_count)     #
+                            self.state_observation_map_dict_new[state_node_count] = set()
+                            self.winning_state_observation_map[state_node_count] = set() 
+                            self.state_observation_map_dict_new[state_node_count].add(ws_node_count)       #
+                            self.winning_state_observation_map[state_node_count].add(ws_node_count)
 
                         if self.check_common_action(SS_target, Avalid_states):
                             ws_node_count = (onode_count, 1)
@@ -243,9 +264,11 @@ class Model:
                             observation_target.add(ws_node_count)
                             for fnode in SS_target:   
                                 state_node_count = (fnode, oc)                        
-                                self.state_observation_map_change_record.add(state_node_count)     # 
-                                self.state_observation_map_dict_new[state_node_count] = ws_node_count       #
-                                self.winning_state_observation_map[state_node_count] = ws_node_count
+                                self.state_observation_map_change_record.add(state_node_count)     #
+                                self.state_observation_map_dict_new[state_node_count] = set()
+                                self.winning_state_observation_map[state_node_count] = set() 
+                                self.state_observation_map_dict_new[state_node_count].add(ws_node_count)       #
+                                self.winning_state_observation_map[state_node_count].add(ws_node_count)
                         else:
                             belief_support_set = self.compute_belief_support(SS_target, Avalid_states)
                             for id, belief_support in enumerate(belief_support_set):
@@ -253,10 +276,16 @@ class Model:
                                 obs_nodes_reachable[ws_node_count_index] = {frozenset(['target']): 1.0} 
                                 observation_target.add(ws_node_count_index)                           
                                 for fnode in belief_support:
-                                    state_node_count = (fnode, oc)
-                                    self.state_observation_map_change_record.add(state_node_count) 
-                                    self.state_observation_map_dict_new[state_node_count] = ws_node_count_index       #
-                                    self.winning_state_observation_map[state_node_count] = ws_node_count_index
+                                    state_node_count = (fnode, oc) 
+                                    if state_node_count not in self.state_observation_map_change_record:
+                                        self.state_observation_map_change_record.add(state_node_count)
+                                        self.state_observation_map_dict_new[state_node_count] = set()
+                                        self.winning_state_observation_map[state_node_count] = set()
+                                        self.state_observation_map_dict_new[state_node_count].add(ws_node_count_index)       #
+                                        self.winning_state_observation_map[state_node_count].add(ws_node_count_index)
+                                    else:
+                                        self.state_observation_map_dict_new[state_node_count].add(ws_node_count_index)       #
+                                        self.winning_state_observation_map[state_node_count].add(ws_node_count_index)
                     elif len(SS_target_count) == 0 and len(o_node_not_target) > 0:
                         ws_node_count = (onode_count, 0)
                         obs_nodes_reachable[ws_node_count] = {frozenset(): 1.0}
@@ -264,8 +293,10 @@ class Model:
                         for fnode in o_node_not_target:   
                             state_node_count = (fnode, oc)                       
                             self.state_observation_map_change_record.add(state_node_count)     # 
-                            self.state_observation_map_dict_new[state_node_count] = ws_node_count       #
-                            self.winning_state_observation_map[state_node_count] = ws_node_count
+                            self.state_observation_map_dict_new[state_node_count] = set()
+                            self.winning_state_observation_map[state_node_count] = set() 
+                            self.state_observation_map_dict_new[state_node_count].add(ws_node_count)       #
+                            self.winning_state_observation_map[state_node_count].add(ws_node_count)
                     elif len(SS_target_count) > 0 and len(o_node_not_target) == 0:
                         if self.check_common_action(SS_target, Avalid_states):
                             ws_node_count = (onode_count, 0)
@@ -274,8 +305,10 @@ class Model:
                             for fnode in SS_target:   
                                 state_node_count = (fnode, oc)                        
                                 self.state_observation_map_change_record.add(state_node_count)     # 
-                                self.state_observation_map_dict_new[state_node_count] = ws_node_count       #
-                                self.winning_state_observation_map[state_node_count] = ws_node_count
+                                self.state_observation_map_dict_new[state_node_count] = set()
+                                self.winning_state_observation_map[state_node_count] = set() 
+                                self.state_observation_map_dict_new[state_node_count].add(ws_node_count)       #
+                                self.winning_state_observation_map[state_node_count].add(ws_node_count)
                         else:
                             belief_support_set = self.compute_belief_support(SS_target, Avalid_states)
                             for id, belief_support in enumerate(belief_support_set):
@@ -284,9 +317,15 @@ class Model:
                                 observation_target.add(ws_node_count_index)                           
                                 for fnode in belief_support:
                                     state_node_count = (fnode, oc)
-                                    self.state_observation_map_change_record.add(state_node_count) 
-                                    self.state_observation_map_dict_new[state_node_count] = ws_node_count_index       #
-                                    self.winning_state_observation_map[state_node_count] = ws_node_count_index
+                                    if state_node_count not in self.state_observation_map_change_record:
+                                        self.state_observation_map_change_record.add(state_node_count)
+                                        self.state_observation_map_dict_new[state_node_count] = set()
+                                        self.winning_state_observation_map[state_node_count] = set()
+                                        self.state_observation_map_dict_new[state_node_count].add(ws_node_count_index)       #
+                                        self.winning_state_observation_map[state_node_count].add(ws_node_count_index)
+                                    else:
+                                        self.state_observation_map_dict_new[state_node_count].add(ws_node_count_index)       #
+                                        self.winning_state_observation_map[state_node_count].add(ws_node_count_index)
                                                    
         print('Number of target observation states: %s' %len(observation_target))
         print('Number of other states: %s' %len(observation_else))
@@ -706,8 +745,11 @@ def test_scenario(pomdp):
 
 if __name__ == "__main__":
     # pomdp = create_scenario("ETH")
-    # pomdp = create_scenario("SDD-bookstore-video1")
-    pomdp = create_scenario("SDD-deathCircle-video1")
+    pomdp = create_scenario("SDD-bookstore-video1")
+    # pomdp = create_scenario("SDD-deathCircle-video1")
     test_scenario(pomdp)
+    s = {(3, 18), (2, 18), (2, 19)}
+    result = pomdp.check_winning_set(s, 1)
+    print(result)
     #pomdp.plot_map(True)
     pass
