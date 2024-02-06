@@ -146,12 +146,15 @@ class Model:
         print("Common observation: %s" %common_obs)
         if len(common_obs) > 0:
             for obs in common_obs:
-                if obs in self.winning_obs:
+                if obs in self.winning_obs: # only need to check one obs in common_obs?
                     return True               
                 else:
                     return False
         else:
             return False
+        # if not common_obs: return False
+        # return common_obs[0] in self.winning_obs
+
 
     def check_common_action(self, state_set, Avalid_states):
         sets_list = []
@@ -571,9 +574,6 @@ def create_scenario_obstacle(minX, minY, maxX, maxY,
     initial_belief = {}
     for state in initial_belief_support:
         initial_belief[state] = 1 / len(initial_belief_support)   
-
-    
-
 
     pomdp = Model(robot_nodes, actions, robot_edges, cost,
                     initial_belief, targets, end_states, 
