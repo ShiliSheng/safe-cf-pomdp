@@ -1,7 +1,7 @@
+import seaborn as sns
 from scipy.stats import f_oneway
 from statsmodels.stats.multicomp import pairwise_tukeyhsd
 import statsmodels.api as sm
-
 import numpy as np
 import pandas as pd
 import os
@@ -10,12 +10,94 @@ import matplotlib.patches as patches
 import pickle
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
+from collections import defaultdict
+
+def get_all_summary(path):
+    results = []
+    for experiment_setting in os.listdir(path):
+        file = path + experiment_setting + "/summary.csv"
+        if not os.path.exists(file): continue
+        result = pd.read_csv(file, index_col=0)
+        result["Setting"] = "Shield (\u03B1 = {})".format(result.loc[0, "Failure Rate"]) if result.loc[0, "Shield Level"] else 'No Shield'
+        results.append(result)
+    r = pd.concat(results, ignore_index = True)
+    r.to_csv("all_summary.csv", index=False)
+    return r
+
+def format_number(x):
+    # If the number is an integer or has more than 2 decimal places, return it as is
+    if x == int(x) or x == round(x, 2):
+        return str(x)
+    # Otherwise, remove trailing zeros and return the number with up to 2 decimal places
+    else:
+        return '{:.{}f}'.format(x, 2).rstrip('0').rstrip('.')
+    
+def get_stat(path):
+    r = get_all_summary(path)
+
+    summary_of_summary = []
+    for setting, df in r.groupby(["Setting", "Number of Dynamic Agents"]):
+        data = {
+            "N":                     df["Number of Dynamic Agents"].iloc[0],
+            "alpha":                                 df["Failure Rate"].iloc[0] if df["Shield Level"].iloc[0] ==1 else 0,
+            "P safe":          df["Percentage of time being safe to dynamic agents"].mean(),
+            'No. Collision': df["Number of times being unsafe to static obstacles"].mean(),
+            'Reward':               df['Cumulative Undiscounted Reward'].mean(),
+        }
+        summary_of_summary.append(pd.DataFrame([data], columns = data.keys()))
+    summary = pd.concat(summary_of_summary, ignore_index = True).sort_values(by = [ "N", "alpha"])
+    summary["alpha"] = summary["alpha"].apply(format_number)
+    summary["P safe"] = summary["P safe"].apply(format_number)
+    
+    latex_table = summary.to_latex(index = False)
+    print(path)
+    print(latex_table)
+    # with open('merged_cells.txt', 'w') as f:
+    #     f.write(latex_table)
+
+    boxplot(r, x=  'Number of Dynamic Agents', y = 'Minimum Distance to Agents', hue = 'Setting',
+            xlabel = 'Number of Pedestrians' , ylabel = 'Minimum Distance (m)', 
+            fig_name = '{}-Distance.jpg'.format(r.loc[0,"Model"]), ncol = 4, hline = 2, )
+    
+    boxplot(r, x=  'Number of Dynamic Agents', y = 'Cumulative Undiscounted Reward', hue = 'Setting',
+            xlabel = 'Number of Pedestrians' , ylabel = 'Undiscounted Reward', 
+            fig_name = '{}-Undiscounted Reward.jpg'.format(r.loc[0,"Model"]), ncol = 3,)
+    
+    boxplot(r, x=  'Number of Dynamic Agents', y = 'Cumulative Discounted Reward', hue = 'Setting',
+            xlabel = 'Number of Pedestrians' , ylabel = 'Discounted Reward', 
+            fig_name = '{}-Discounted Reward.jpg'.format(r.loc[0,"Model"]), ncol = 3,)
+
+def boxplot(dataframe, x, y, hue, xlabel, ylabel, fig_name, ncol = 1, hline = -float("inf"), fig_format = 'jpg',):
+    plt.rcParams['font.family'] = 'Times New Roman'
+    plt.rcParams['font.size'] = 13
+    plt.figure(figsize=(6, 4))
+    box_plot = sns.boxplot(data = dataframe, x = x, y = y, hue = hue, hue_order = sorted(dataframe[hue].unique()), width = 0.6)
+    if hline != -float("inf"):
+        plt.axhline(y=hline, color='r', linestyle='dotted', label= 'Safety Distance')
+
+    legend = box_plot.legend(
+                            loc='upper center', 
+                             bbox_to_anchor=(0.5, 1.15 ), 
+                             ncol = ncol,
+                             columnspacing = 0.5,
+                             handletextpad=0.2,
+                            handlelength = 0.7)
+    legend.get_frame().set_facecolor('none')  # Set legend background color
+    legend.get_frame().set_linewidth(0)        # Remove legend border
+    # box_plot.set_title('Box plot of distance grouped by categorical columns and N_agents')
+    box_plot.set_xlabel(xlabel)
+    box_plot.set_ylabel(ylabel)
+    
+    plt.tight_layout()
+    plt.savefig(fig_name,  dpi=300 , bbox_inches="tight", format=fig_format)
+    # plt.show()
+    plt.close()
 
 def get_statistics(path):
     np.set_printoptions(precision=2, suppress=True)
     result = []
-    record_min_distance = []
-    record_reward = []
+    record_min_distance = defaultdict(list)
+    record_reward = defaultdict(list)
     N_agents = 100
     for experiment_setting in os.listdir(path):
         # if not os.path.isdir(path + experiment_setting ): continue
@@ -25,10 +107,6 @@ def get_statistics(path):
         day_time = ''.join(experiment_setting.split("-")[8:])
         df = pd.read_csv(file, index_col=0)
         n_episodes = len(df)
-        
-        if N_agents !=100 and N_agents != df["Number of Dynamic Agents"].iloc[0] :
-            continue
-
         # for i_episode in range(n_episodes):
         #     episode_file = os.path.join(path, experiment_setting, "Episode-{}.pkl".format(i_episode))
         #     with open(episode_file, 'rb') as episode_file_pkl:
@@ -95,11 +173,11 @@ def get_statistics(path):
 
         min_distance = pd.DataFrame()
         min_distance[setting] = df["Minimum Distance to Agents"]
-        record_min_distance.append(min_distance)
+        record_min_distance[data["Number of Dynamic Agents"]].append(min_distance)
 
         reward = pd.DataFrame()
         reward[setting] = df["Cumulative Undiscounted Reward"]
-        record_reward.append(reward)
+        record_reward[data["Number of Dynamic Agents"]].append(reward)
 
         result.append(pd.DataFrame([data], columns = data.keys()))
         print(df["Percentage of time being safe to static agents"].mean(), data["Percentage of time being safe to dynamic agents"])
@@ -109,42 +187,51 @@ def get_statistics(path):
     # print(res.values, res.columns)
     res.to_csv( path + "stat2.csv", index = False)
     
-    # for record, name in [(record_min_distance, "Minimum Distance to Pedestrians"), (record_reward, "Reward")]:
-    #     df = pd.concat(record, axis= 1)
-    #     df = df.reindex(sorted(df.columns), axis=1)
-    #     df.boxplot()
-    #     plt.grid(False)
-    #     plt.xticks(rotation=30)
-    #     plt.ylabel(name)
-    #     plt.title("Number of pedestrians {}".format(N_agents))
-    #     plt.axhline(y=0.5, color='r', linestyle='--', label='Safety Distance')
-    #     plt.savefig(path + name + "_N{}.png".format(N_agents), dpi = 300, bbox_inches= "tight")
-    #     plt.show()
+    for N_agents in record_min_distance:
+        for record, name in [(record_min_distance[N_agents], "Minimum Distance to Pedestrians"), (record_reward[N_agents], "Reward")]:
+            for column in record.columns:
+                box_plot = sns.boxplot(x=N_agents, y=record, data=record)
 
-    #     f_statistic, p_value = f_oneway(*[df[col] for col in df.columns])
-    #     print(f'F-statistic: {f_statistic}\nP-value: {p_value}')
+            df = pd.concat(record, axis= 1)
+            # df = df.reindex(sorted(df.columns), axis=1)
+            df.boxplot()
+            plt.grid(False)
+            plt.xticks(rotation=30)
+            plt.ylabel(name)
+            plt.title("Number of pedestrians {}".format(N_agents))
+            plt.axhline(y=0.5, color='r', linestyle='--', label='Safety Distance')
+            plt.savefig(path + name + "_N{}.png".format(N_agents), dpi = 300, bbox_inches= "tight")
+            plt.show()
 
-    #     # Check the p-value to determine if there is a significant difference
-    #     alpha = 0.05
-    #     if p_value < alpha:
-    #         print("Reject the null hypothesis: There is a significant difference between groups.")
-    #     else:
-    #         print("Fail to reject the null hypothesis: There is no significant difference between groups.")
-    #     # Tukey's HSD post hoc test
-    #     melted_df = pd.melt(df)
-    #     posthoc = pairwise_tukeyhsd(melted_df['value'], melted_df['variable'], alpha=0.05)
+            f_statistic, p_value = f_oneway(*[df[col] for col in df.columns])
+            print(f'F-statistic: {f_statistic}\nP-value: {p_value}')
 
-    #     # Print the results of the post hoc test
-    #     print(posthoc)
+            # Check the p-value to determine if there is a significant difference
+            alpha = 0.05
+            if p_value < alpha:
+                print("Reject the null hypothesis: There is a significant difference between groups.")
+            else:
+                print("Fail to reject the null hypothesis: There is no significant difference between groups.")
+            # Tukey's HSD post hoc test
+            melted_df = pd.melt(df)
+            posthoc = pairwise_tukeyhsd(melted_df['value'], melted_df['variable'], alpha=0.05)
+
+            # Print the results of the post hoc test
+            print(posthoc)
 
 if __name__ == "__main__":
     # plot_results()
     # path = './results/Obstacle-SDD-bookstore-video1-0-0-60-60/shield_1-lookback_4-prediction_5-failure-0.1-agents-10-2024-01-14-11-47/'
     # plot_figure(path)
-    path = './results/Obstacle-ETH-0-0-22-22/'
-    get_statistics(path = "./results/Obstacle-ETH-0-0-22-22/")
-    get_statistics(path = "./results/Obstacle-SDD-deathCircle-video1-0-0-50-60/")
-    get_statistics(path = "./results/Obstacle-SDD-bookstore-video1-0-0-50-45/")
+
+    ETH_path = './results/Obstacle-ETH-0-0-22-22/'
+    death = "./results/Obstacle-SDD-deathCircle-video1-0-0-50-60/"
+    bookstore ="./results/Obstacle-SDD-bookstore-video1-0-0-50-45/"
+    get_stat(ETH_path)
+    get_stat(death)
+    get_stat(bookstore)
+    # get_statistics(path = )
+    # get_statistics(path = )
     # df = pd.read_table(path + "stat.csv", sep = ",")
     # print(df.columns)
     # # # Assuming df is your DataFrame
