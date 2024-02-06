@@ -133,11 +133,13 @@ def plot_scene(scene):
             plot_figure(run)
 
 if __name__ == "__main__":
-    # ETH = './results/Obstacle-ETH-0-0-22-22/'
+    ETH = './results/Obstacle-ETH-0-0-22-22/'
     # plot_scene(ETH)
     # bookstore = './results/Obstacle-SDD-bookstore-video1-0-0-50-45/'
     # plot_scene(bookstore)
-    deathCircle = './results/Obstacle-SDD-deathCircle-video1-0-0-50-60/'
-    plot_scene(deathCircle)
-
+    # deathCircle = './results/Obstacle-SDD-deathCircle-video1-0-0-50-60/'
+    # plot_scene(deathCircle)
+    # plot_figure('/Users/shengsheng/Downloads/github/CF_POMDP/safe-cf-pomdp/results/Obstacle-SDD-deathCircle-video1-0-0-50-60/shield_1-lookback_4-prediction_3-failure-0.1-agents-15-2024-01-26-16-45/')
+    # plot_figure('./results/Obstacle-SDD-bookstore-video1-0-0-50-45/shield_1-lookback_4-prediction_3-failure-0.05-agents-23-2024-01-27-10-17/')
+    plot_figure('./results/Obstacle-ETH-0-0-22-22/shield_0-lookback_4-prediction_3-failure-0.1-agents-20-2024-01-26-13-35/')
     pass
