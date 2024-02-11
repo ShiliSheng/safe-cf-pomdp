@@ -155,22 +155,34 @@ class Predictor():
         reshaped =  [list(chain(*group)) for group in zip(*estimation)]
         return reshaped
     
-    def predict(self, dynamic_agents, cur_time, starting_index = 1):
-        history_length = self.history_length
-        estimation = []
-        for i in range(starting_index, len(dynamic_agents.columns), 2):
-            values = dynamic_agents.loc[cur_time - history_length + 1: cur_time, [dynamic_agents.columns[i], dynamic_agents.columns[i+1]]]
-            test = torch.tensor(np.array(values), dtype=torch.float32).clone().detach().unsqueeze(0)  # Add batch dimension
-            # print(values.values)
-            p = self.predict_case(test)
-            estimation.append(p)
-        reshaped =  [list(chain(*group)) for group in zip(*estimation)]
-        # [
-        #  [time1_agent1, ..  time1_agentn]   
-        #  [...           ..        ..    ]    
-        #  [timeH_agent1, ..  timeH_agentn]   
-        # ]
-        return reshaped 
+    def predict(self, dynamic_agents, cur_time, starting_index = 1, shieldLevel = 1):
+        if shieldLevel == 1:
+            history_length = self.history_length
+            estimation = []
+            for i in range(starting_index, len(dynamic_agents.columns), 2):
+                values = dynamic_agents.loc[cur_time - history_length + 1: cur_time, [dynamic_agents.columns[i], dynamic_agents.columns[i+1]]]
+                test = torch.tensor(np.array(values), dtype=torch.float32).clone().detach().unsqueeze(0)  # Add batch dimension
+                # print(values.values)
+                p = self.predict_case(test)
+                estimation.append(p)
+            reshaped =  [list(chain(*group)) for group in zip(*estimation)]
+            # [
+            #  [time1_agent1, ..  time1_agentn]   
+            #  [...           ..        ..    ]    
+            #  [timeH_agent1, ..  timeH_agentn]   
+            # ]
+            return reshaped
+        if shieldLevel == 2:
+            estimation = []
+            prev = dynamic_agents.loc[cur_time - 1, :].values
+            cur = dynamic_agents.loc[cur_time, :].values
+            for k in range(self.prediction_length):
+                nxt = 2 * cur - prev
+                estimation.append(nxt)
+                prev = cur
+                cur = nxt
+            return estimation
+        return []
 
     def compute_prediction_error(self, truth, prediction):
         N = len(truth) // 2

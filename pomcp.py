@@ -50,7 +50,7 @@ class ForcedExitException(Exception):
 
 #     def size(self):
 #         return len(self.particles)
-ON_THE_FLY = 1
+
 class POMCPNode:
     def __init__(self) -> None:
         self.belief = defaultdict(int)
@@ -69,6 +69,12 @@ class POMCPNode:
     
     def add_particle(self, state):
         self.belief[state] = self.belief.get(state, 0) + 1;
+    
+    def remove_particle(self, state):
+        if state in self.belief and self.belief[state] > 0:
+            self.belief[state] -= 1
+            if self.belief[state] == 0:
+                del self.belief[state]
 
     def add_illegal_action_index(self, actionIndex):
         self.illegalActionIndexes.add(actionIndex)
@@ -302,9 +308,12 @@ class POMCP:
         # if self.verbose >= 1:
         #     print("finishing all simulations", self.numSimulations)
             
-    def check_winning(self, state, time_count):
-        return self.pomdp.check_winning(state, time_count)
+    # def check_winning(self, state, time_count):
+    #     return self.pomdp.check_winning(state, time_count)
     
+    def check_winning_set(self, belief_support, time_count):
+        return self.pomdp.check_winning_set(belief_support, time_count)
+
     def get_observation_from_beleif(self, belief):
         for state in belief:
             return self.get_observation(state)
@@ -358,18 +367,23 @@ class POMCP:
 
         actionIndex = self.greedyUCB(vnode, True)
         winning = True
-        if self.TreeDepth <= self.horizon and self.shieldLevel == ON_THE_FLY:
-            if not vnode.have_state_in_belief_support(state): 
-                # check if this state is winning or not   
-                winning = self.check_winning(state, self.TreeDepth)
-                if not winning:
-                    qparent = vnode.getParent() 
-                    parentActionIndex = qparent.getH()
-                    vparent = qparent.getParent() 
-                    vparent.add_illegal_action_index(parentActionIndex)
-                    # print("not winning", self.TreeDepth, parentActionIndex, state, self.get_observation(state))
-        if self.TreeDepth >= 1 and winning:
+        
+        already_in = vnode.have_state_in_belief_support(state)
+        
+        if self.TreeDepth >= 1:
             vnode.add_particle(state)
+        
+        if self.shieldLevel > 0 and self.TreeDepth <= self.horizon and not already_in :
+            # check if this state is winning or not   
+            # winning = self.check_winning(state, self.TreeDepth)
+            winning = self.check_winning_set(vnode.belief.keys(), self.TreeDepth)
+            if not winning:
+                vnode.remove_particle(state)
+                qparent = vnode.getParent() 
+                parentActionIndex = qparent.getH()
+                vparent = qparent.getParent() 
+                vparent.add_illegal_action_index(parentActionIndex)
+                # print("not winning", self.TreeDepth, parentActionIndex, state, self.get_observation(state))
 
         qnode = vnode.get_child_by_action_index(actionIndex)
         total_reward = self.simulateQ(state, qnode, actionIndex)
@@ -557,21 +571,12 @@ class POMCP:
         return self.action2Index.get(action, -1)
 
 def replay(H_default = -1):
-    pkl_file = 'results/Obstacle-SDD-bookstore-video1-0-0-60-60/shield_1-lookback_4-prediction_5-failure-0.1-agents-10-2024-01-14-11-47/Episode-0.pkl'
-    
     scene = './results/Obstacle-ETH-0-0-22-22/'
-    setting = "shield_1-lookback_4-prediction_8-failure-0.1-agents-5-2024-01-20-07-07/"
+    setting = "shield_2-lookback_4-prediction_3-failure-0.1-agents-25-2024-02-06-16-59"
     episode = 54
     pkl_file = os.path.join(scene, setting, "Episode-{}.pkl".format(episode))
-    question_step = 102
+    question_step = 11
     scene_name  = 'ETH'
-
-    # scene = './results/Obstacle-ETH-0-0-22-22/'
-    # setting = "shield_1-lookback_4-prediction_4-failure-0.05-agents-5-2024-01-20-00-00/"
-    # episode = 32
-    # pkl_file = os.path.join(scene, setting, "Episode-{}.pkl".format(episode))
-    # question_step = 39
-    # scene_name  = 'ETH'
 
     with open(pkl_file, 'rb') as file:
         data = pickle.load(file)
@@ -602,11 +607,14 @@ def replay(H_default = -1):
     pomcp = POMCP(pomdp, shield_level, H,  constant = 170, maxDepth = 100, numSimulations = 2 ** 12)
     
     ACP_step = pomdp.build_restrictive_region(estimation_moving_agents_cur, constraints_cur_1, H, safe_distance)
-    ACP_step = defaultdict(list)
+    print("---==")
+    print( ACP_step)
+    print("---==")
+    # ACP_step = defaultdict(list)
     obs_current_node = pomcp.get_observation(state_ground_truth)
-    motion_mdp, AccStates = pomcp.pomdp.compute_accepting_states() 
+    motion_mdp, AccStates, Avalid_states = pomcp.pomdp.compute_accepting_states() 
     observation_successor_map = pomcp.pomdp.compute_H_step_space(H)
-    pomcp.pomdp.online_compute_winning_region(obs_current_node, AccStates, observation_successor_map, H, ACP_step)
+    pomdp.online_compute_winning_region(obs_current_node, AccStates, Avalid_states, observation_successor_map, H, ACP_step)
 
     # print(ACP_step)
     # print(constraints_cur_1)
@@ -622,6 +630,7 @@ def replay(H_default = -1):
     # # pomcp = POMCP(pomdp, 0, 3, 0)
     pomcp.reset_root()
     actionIndex = pomcp.select_action()
+    print(pomcp.root.illegalActionIndexes, "___++")
     if actionIndex == -1:
         if pomcp.pomdp.preferred_actions:
             actionIndex = random.choice(pomcp.pomdp.preferred_actions)
@@ -652,16 +661,5 @@ def test_const(scene_name,pomcp_numSimulation):
     print(pomcp.R_max, pomcp.R_min)
 
 if __name__ == "__main__":
-    # result = []
-    # for h in [4, 6, 8]:
-    #     res = []
-    #     for _ in range(100):
-    #         a = replay(H_default=h)
-    #         res.append(a)
-    #     result.append((h, res.count('E')))
-    # print(result)
-    # pass
-    # test_const('ETH')
-    test_const('SDD-bookstore-video1', 2 ** 12)
-    # test_const('SDD-deathCircle-video1', 2 ** 12)
-    
+    replay()
+    pass

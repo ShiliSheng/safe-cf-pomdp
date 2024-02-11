@@ -248,13 +248,24 @@ def copy_and_rename_reference_images(folder_path, destination_path = "./OpenTraj
             if not os.path.exists(new_path): os.path.mkdir(new_path)
             shutil.copy(reference_path, new_path)
 
+def get_max_speed(file):
+    file = './test_data/ETH/rawdata_test.csv'
+    pd.read_csv(file)
+
 if __name__ == "__main__":
+    file = './test_data/ETH/rawdata_test.csv'
+    data = pd.read_csv(file)
+    max_x_diff, max_y_diff = 0, 0
+    for id, group in data.groupby("id"):
+        max_x_diff = max(max_x_diff, group.x.diff().abs().max())
+        max_y_diff = max(max_y_diff, group.y.diff().abs().max())
+    print(max_x_diff, max_y_diff)
     # preprocess_dataset()
     # plot_heat_map(data_path = "./test_data/")
     # raw_dataset_path = './test_data/ETH/'
     # raw_dataset_path = './test_data/SDD-deathCircle-video1/'
-    raw_dataset_path = './test_data/SDD-bookstore-video1/'
-    create_test_dataset(raw_dataset_path, min_cooldown=5, max_cooldown=20)
+    # raw_dataset_path = './test_data/SDD-bookstore-video1/'
+    # create_test_dataset(raw_dataset_path, min_cooldown=5, max_cooldown=20)
     # history_length = 4
     # prediction_length = 4
     # create_training_validation_dataset(raw_dataset_path, history_length, prediction_length)

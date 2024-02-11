@@ -14,8 +14,8 @@ from collections import defaultdict
 import numpy as np
 import copy
 import matplotlib.pyplot as plt
-# def print(*args, **kwargs):
-#     return
+def print(*args, **kwargs):
+    return
 
 class Model:
     def __init__(self, robot_nodes, actions, robot_edges, cost, initial_belief,
@@ -131,14 +131,14 @@ class Model:
         self.motion_mdp = motion_mdp
         return motion_mdp, AccStates, Avalid_states
 
-    def check_winning(self, state, oc): 
-        if (state, oc) in self.state_observation_map_change_record:
-            return self.state_observation_map_dict_new[(state, oc)] in self.winning_obs
-        return (self.state_observation_map[state], oc) in self.winning_obs
+    # def check_winning(self, state, oc): 
+    #     if (state, oc) in self.state_observation_map_change_record:
+    #         return self.state_observation_map_dict_new[(state, oc)] in self.winning_obs
+    #     return (self.state_observation_map[state], oc) in self.winning_obs
 
     def check_winning_set(self, state_set, oc):
         sets_list = [] 
-        for id, state in enumerate(state_set):
+        for state in state_set:
             obs_set = self.state_observation_map_dict_new[(state, oc)]
             print(obs_set)
             sets_list.append(obs_set) 
@@ -154,7 +154,6 @@ class Model:
             return False
         # if not common_obs: return False
         # return common_obs[0] in self.winning_obs
-
 
     def check_common_action(self, state_set, Avalid_states):
         sets_list = []

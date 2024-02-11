@@ -1,6 +1,14 @@
 import seaborn as sns
 from scipy.stats import f_oneway
 from statsmodels.stats.multicomp import pairwise_tukeyhsd
+from statannotations.Annotator import Annotator
+from scipy.stats import ttest_ind
+from statannot import add_stat_annotation
+from statsmodels.stats.multicomp import pairwise_tukeyhsd
+from statsmodels.formula.api import ols
+from statsmodels.stats.anova import anova_lm
+import scipy.stats as stats
+
 import statsmodels.api as sm
 import numpy as np
 import pandas as pd
@@ -18,62 +26,131 @@ def get_all_summary(path):
         file = path + experiment_setting + "/summary.csv"
         if not os.path.exists(file): continue
         result = pd.read_csv(file, index_col=0)
-        result["Setting"] = "Shield (\u03B1 = {})".format(result.loc[0, "Failure Rate"]) if result.loc[0, "Shield Level"] else 'No Shield'
+        if result["Shield Level"].iloc[0] == 0:
+            result['Method'] = 'No Shield'
+        elif result["Shield Level"].iloc[0] == 1:
+            result['Method'] = 'ACP ({})'.format(result["Failure Rate"].apply(format_number).iloc[0])
+        else:
+            result['Method'] = 'Reactive'
         results.append(result)
     r = pd.concat(results, ignore_index = True)
-    r.to_csv("all_summary.csv", index=False)
+    r.to_csv(path + "all_summary.csv", index=False)
     return r
 
 def format_number(x):
-    # If the number is an integer or has more than 2 decimal places, return it as is
     if x == int(x) or x == round(x, 2):
         return str(x)
-    # Otherwise, remove trailing zeros and return the number with up to 2 decimal places
-    else:
-        return '{:.{}f}'.format(x, 2).rstrip('0').rstrip('.')
+    return '{:.{}f}'.format(x, 2).rstrip('0').rstrip('.')
     
 def get_stat(path):
     r = get_all_summary(path)
-
     summary_of_summary = []
-    for setting, df in r.groupby(["Setting", "Number of Dynamic Agents"]):
-        data = {
-            "N":                     df["Number of Dynamic Agents"].iloc[0],
-            "alpha":                                 df["Failure Rate"].iloc[0] if df["Shield Level"].iloc[0] ==1 else 0,
-            "P safe":          df["Percentage of time being safe to dynamic agents"].mean(),
-            'No. Collision': df["Number of times being unsafe to static obstacles"].mean(),
-            'Reward':               df['Cumulative Undiscounted Reward'].mean(),
-        }
+    for _, df in r.groupby(["Method", "Number of Dynamic Agents"]):
+        data ={}
+        data["N"] = df["Number of Dynamic Agents"].iloc[0]
+        data["Method"] = df["Method"].iloc[0]
+        data["P safe"] = df["Percentage of time being safe to dynamic agents"].mean()
+        data['No. Collision']=  df["Number of times being unsafe to static obstacles"].mean()
+        data["Reward"] =  df['Cumulative Undiscounted Reward'].mean().round(1)
         summary_of_summary.append(pd.DataFrame([data], columns = data.keys()))
-    summary = pd.concat(summary_of_summary, ignore_index = True).sort_values(by = [ "N", "alpha"])
-    summary["alpha"] = summary["alpha"].apply(format_number)
+    summary = pd.concat(summary_of_summary, ignore_index = True)
+    # summary["alpha"] = summary["alpha"].apply(format_number)
     summary["P safe"] = summary["P safe"].apply(format_number)
-    
-    latex_table = summary.to_latex(index = False)
-    print(path)
-    print(latex_table)
+    # summary = summary.sort_values(by = [ "N"])
+    # print(summary.values)
+
+    with open(path + 'stat.txt', 'w') as f:
+        for n in sorted(summary.N.unique()):
+            for method in ['No Shield', "Reactive", "ACP (0.05)", "ACP (0.1)"]:
+                rows = summary.loc[summary.N==n, :]
+                rows = rows.loc[rows.Method==method, :]
+                for row in rows.values:
+                    f.write(";".join(str(item) for item in row) + "\n")
+
+    # latex_table = summary.to_latex(index = False)
+    # print(latex_table)
     # with open('merged_cells.txt', 'w') as f:
     #     f.write(latex_table)
+    
+    hue_order = ["No Shield", "Reactive", "ACP (0.05)", "ACP (0.1)"]
+    x = 'Number of Dynamic Agents'
+    hue = 'Method'
 
-    boxplot(r, x=  'Number of Dynamic Agents', y = 'Minimum Distance to Agents', hue = 'Setting',
+    y = 'Minimum Distance to Agents'
+    boxplot(path, r, x = x, y = y, hue = hue,
             xlabel = 'Number of Pedestrians' , ylabel = 'Minimum Distance (m)', 
-            fig_name = '{}-Distance.jpg'.format(r.loc[0,"Model"]), ncol = 4, hline = 2, )
+            fig_name = '{}-Distance.jpg'.format(r.loc[0,"Model"]), ncol = 5, hline = 2, hue_order=hue_order)
     
-    boxplot(r, x=  'Number of Dynamic Agents', y = 'Cumulative Undiscounted Reward', hue = 'Setting',
+    y = 'Cumulative Undiscounted Reward'
+    boxplot(path, r, x = x, y = y, hue = hue,
             xlabel = 'Number of Pedestrians' , ylabel = 'Undiscounted Reward', 
-            fig_name = '{}-Undiscounted Reward.jpg'.format(r.loc[0,"Model"]), ncol = 3,)
+            fig_name = '{}-Undiscounted Reward.jpg'.format(r.loc[0,"Model"]), ncol = 4, hue_order=hue_order)
     
-    boxplot(r, x=  'Number of Dynamic Agents', y = 'Cumulative Discounted Reward', hue = 'Setting',
+    y = 'Cumulative Discounted Reward'
+    boxplot(path, r, x = x, y = y, hue = hue,
             xlabel = 'Number of Pedestrians' , ylabel = 'Discounted Reward', 
-            fig_name = '{}-Discounted Reward.jpg'.format(r.loc[0,"Model"]), ncol = 3,)
+            fig_name = '{}-Discounted Reward.jpg'.format(r.loc[0,"Model"]), ncol = 4, hue_order = hue_order)
 
-def boxplot(dataframe, x, y, hue, xlabel, ylabel, fig_name, ncol = 1, hline = -float("inf"), fig_format = 'jpg',):
+def t_test(data, x, y, hue):
+    p_values = {}
+    for x_item in data[x].unique():
+        for hue_i, hue_item_i in enumerate(data[hue].unique()):
+            for hue_j, hue_item_j in enumerate(data[hue].unique()):
+                if hue_j > hue_i:
+                    subset1 = data[(data[x] == x_item) & (data[hue] == hue_item_i)][y]
+                    subset2 = data[(data[x] == x_item) & (data[hue] == hue_item_j)][y]
+                    _, p_value = ttest_ind(subset1, subset2)
+                    p_values[(x_item, hue_item_i, hue_item_j)] = p_value
+                    if (p_value < 0.05):
+                        print(x, y, hue, (x_item, hue_item_i, hue_item_j), p_value, "___++")
+    return p_values
+
+def perform_one_way_anova(df, x, y, hue, path):
+    df = df.rename(columns={x: x.replace(" ", "_")})
+    df = df.rename(columns={y: y.replace(" ", "_")})
+    df = df.rename(columns={hue: hue.replace(" ", "_")})
+    x, y, hue = x.replace(" ", "_"), y.replace(" ", "_"), hue.replace(" ", "_")
+    formula = f"{y} ~ {x} + C({hue})"
+    model = ols(formula, data=df).fit()
+    anova_table = anova_lm(model, typ=2)
+    tukey_result = pairwise_tukeyhsd(df[y], df[hue])
+    # print( anova_table['F'][0], anova_table['PR(>F)'][0], )
+    # print(anova_table, tukey_result)
+    with open(path + 'stat.txt', 'a') as f:
+        f.write(str(anova_table))   
+        f.write(str(tukey_result)) 
+    return anova_table, tukey_result
+
+def boxplot(path, dataframe, x, y, hue, xlabel, ylabel, fig_name, ncol = 1, hline = -float("inf"), fig_format = 'jpg', hue_order = []):
+    # p_values = t_test(dataframe, x, y, hue)
+    perform_one_way_anova(dataframe, x, y, hue, path)
+
+    custom_palette = {"No Shield": (206/255, 170/255, 210/255),
+                   "Reactive": (110/255, 156/255, 114/255), 
+                   "ACP (0.05)": (213/255, 159/255, 63/255), 
+                   "ACP (0.1)": (95/255, 116/255, 160/255),
+                  }
     plt.rcParams['font.family'] = 'Times New Roman'
     plt.rcParams['font.size'] = 13
     plt.figure(figsize=(6, 4))
-    box_plot = sns.boxplot(data = dataframe, x = x, y = y, hue = hue, hue_order = sorted(dataframe[hue].unique()), width = 0.6)
+    box_plot = sns.boxplot(data = dataframe, x = x, y = y, hue = hue, 
+                           hue_order = hue_order, 
+                           width = 0.6, 
+                           palette=custom_palette, linewidth = 0.6,
+                           fliersize=0.5
+                           )
     if hline != -float("inf"):
-        plt.axhline(y=hline, color='r', linestyle='dotted', label= 'Safety Distance')
+        plt.axhline(y=hline, color='r', linestyle='dotted', label= 'Safe Distance')
+    
+    # box_pairs =[]
+    # hue_unique = dataframe[hue].unique()
+    # for x_item in dataframe[x].unique():
+    #     for hue_i in range(len(hue_unique)):
+    #         for hue_j in range(hue_i + 1, len(hue_unique)):
+    #             box_pairs.append(((x_item, hue_unique[hue_i]), (x_item, hue_unique[hue_j])))
+    # add_stat_annotation(box_plot, data=dataframe, x=x, y=y, hue=hue, 
+    #                     box_pairs=box_pairs,
+    #                 test='t-test_ind', loc='inside', verbose=2)
 
     legend = box_plot.legend(
                             loc='upper center', 
@@ -84,12 +161,13 @@ def boxplot(dataframe, x, y, hue, xlabel, ylabel, fig_name, ncol = 1, hline = -f
                             handlelength = 0.7)
     legend.get_frame().set_facecolor('none')  # Set legend background color
     legend.get_frame().set_linewidth(0)        # Remove legend border
+    
     # box_plot.set_title('Box plot of distance grouped by categorical columns and N_agents')
     box_plot.set_xlabel(xlabel)
     box_plot.set_ylabel(ylabel)
     
     plt.tight_layout()
-    plt.savefig(fig_name,  dpi=300 , bbox_inches="tight", format=fig_format)
+    plt.savefig(path + fig_name,  dpi=300 , bbox_inches="tight", format=fig_format)
     # plt.show()
     plt.close()
 
@@ -220,16 +298,16 @@ def get_statistics(path):
             print(posthoc)
 
 if __name__ == "__main__":
-    # plot_results()
-    # path = './results/Obstacle-SDD-bookstore-video1-0-0-60-60/shield_1-lookback_4-prediction_5-failure-0.1-agents-10-2024-01-14-11-47/'
-    # plot_figure(path)
-
-    ETH_path = './results/Obstacle-ETH-0-0-22-22/'
-    death = "./results/Obstacle-SDD-deathCircle-video1-0-0-50-60/"
-    bookstore ="./results/Obstacle-SDD-bookstore-video1-0-0-50-45/"
+    t = "_0126_good"
+    ETH_path = './results{}/Obstacle-ETH-0-0-22-22/'.format(t)
+    death = "./results{}/Obstacle-SDD-deathCircle-video1-0-0-50-60/".format(t)
+    bookstore ="./results{}/Obstacle-SDD-bookstore-video1-0-0-50-45/".format(t)
     get_stat(ETH_path)
     get_stat(death)
     get_stat(bookstore)
+
+    # ETH_path = './results/Obstacle-ETH-0-0-22-22/'
+    # get_stat(ETH_path)
     # get_statistics(path = )
     # get_statistics(path = )
     # df = pd.read_table(path + "stat.csv", sep = ",")
