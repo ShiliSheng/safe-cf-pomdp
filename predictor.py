@@ -37,7 +37,74 @@ class Predictor():
         self.num_epochs = training_epochs
         self.model = None # model untrained
         self.device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
-           
+
+    def train_validation(self, dataset_path):
+        train_dataset = load_dataset(dataset_path, 'train_dataset', self.history_length, self.prediction_length)
+        train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True)
+        validation_dataset = load_dataset(dataset_path, 'validation_dataset', self.history_length, self.prediction_length)
+        validation_loader = DataLoader(validation_dataset, batch_size=64, shuffle=False)
+        
+        history_length = self.history_length
+        prediction_length = self.prediction_length
+        input_size = self.input_size  
+        hidden_size = self.hidden_size
+        output_size = self.output_size
+        device = self.device
+        num_epochs = self.num_epochs
+
+        model = LSTMModel(input_size, hidden_size, output_size * prediction_length)
+        model.to(device)
+        criterion = nn.MSELoss()
+        optimizer = optim.Adam(model.parameters(), lr=0.001)
+        
+        train_loss = []
+        validation_loss = []
+        # Assuming 'train_loader' is your DataLoader
+        for epoch in range(num_epochs):
+            total_loss = 0
+            for batch_input, batch_target in train_loader:
+                batch_input, batch_target = batch_input.to(device), batch_target.to(device)
+                output = model(batch_input)
+                output = output.view(-1, prediction_length, output_size)
+                loss = criterion(output, batch_target)
+                total_loss += loss
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+            train_loss.append(total_loss.item() / len(train_loader))
+            model.eval()
+            with torch.inference_mode():
+                total_mse = 0.0
+                num_batches = len(validation_loader)
+                criterion = torch.nn.MSELoss()
+                for batch_input, batch_target in validation_loader:
+                    with torch.no_grad():  # Disable gradient computation during evaluation
+                        batch_input, batch_target = batch_input.to(self.device), batch_target.to(self.device)
+                        output = model(batch_input) # batch_size * (prediction_length * feature_size)
+                        output = output.view(-1, self.prediction_length, self.output_size)# batch_size * prediction_length * feature_size
+                        loss = criterion(output, batch_target)
+                        total_mse += loss.item()
+                average_mse = total_mse / num_batches
+                validation_loss.append(average_mse)
+            print(f'Epoch [{epoch + 1}/{num_epochs}], Train Loss: {loss.item():.4f}, Validation Loss: {average_mse:.4f}')
+        # Training complete
+        model_metadata = {
+        'input_size': input_size,
+        'hidden_size': hidden_size,
+        'output_size': output_size ,
+        'prediction_length': prediction_length,
+        'history_length': history_length,
+        'state_dict': model.state_dict()
+        }
+        # output_LSTM_file = dataset_path + 'history-{}-prediction-{}.pth'.format(history_length, prediction_length)
+        # torch.save(model_metadata, output_LSTM_file)
+        # self.model = model
+        # print("model trained, loaded and saved", output_LSTM_file)
+        plt.plot(range(num_epochs), train_loss, label = 'train')
+        plt.plot(range(num_epochs), validation_loss, label = 'test')
+        plt.legend()
+        plt.show()
+
     def train(self, train_dataset_path):
         train_dataset = load_dataset(train_dataset_path, 'train_dataset', self.history_length, self.prediction_length)
         train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True)
@@ -115,6 +182,7 @@ class Predictor():
         # history_length = 0, prediction_legnth = 0, input_size = 0)
         model_file = train_dataset_path + 'history-{}-prediction-{}.pth'.format(self.history_length, self.prediction_length)
         if not os.path.exists(model_file):
+            print(model_file, "model not found")
             self.train(train_dataset_path)
             self.validate(train_dataset_path)
         loaded_model = torch.load(model_file)
@@ -155,8 +223,11 @@ class Predictor():
         reshaped =  [list(chain(*group)) for group in zip(*estimation)]
         return reshaped
     
-    def predict(self, dynamic_agents, cur_time, starting_index = 1, shieldLevel = 1):
-        if shieldLevel == 1:
+    def predict(self, dynamic_agents, cur_time, starting_index = 1, shieldLevel = 1, max_speed = 0):
+        if shieldLevel == 0: # No shield 
+            return []
+        
+        if shieldLevel == 1: # ACP Shield with prediction from LSTM
             history_length = self.history_length
             estimation = []
             for i in range(starting_index, len(dynamic_agents.columns), 2):
@@ -172,7 +243,7 @@ class Predictor():
             #  [timeH_agent1, ..  timeH_agentn]   
             # ]
             return reshaped
-        if shieldLevel == 2:
+        if shieldLevel == 2: # Speed Prediction
             estimation = []
             prev = dynamic_agents.loc[cur_time - 1, :].values
             cur = dynamic_agents.loc[cur_time, :].values
@@ -182,6 +253,14 @@ class Predictor():
                 prev = cur
                 cur = nxt
             return estimation
+        
+        if shieldLevel == 3: # Max Speed Prediction, return the curr position
+            estimation = []
+            cur = dynamic_agents.loc[cur_time, :].values
+            for k in range(self.prediction_length):
+                estimation.append(cur)
+            return estimation
+        
         return []
 
     def compute_prediction_error(self, truth, prediction):
@@ -225,33 +304,42 @@ class Predictor():
         dynamic_agents = test_dataset.iloc[starting_row:, tracked_agent_col]
         dynamic_agents = dynamic_agents.set_index(pd.RangeIndex(start=-10, stop=-10 + len(dynamic_agents)))
         return dynamic_agents
-    
+
+
+# def test():
+        # H = prediction_model.prediction_length
+        # test_dataset =  pd.read_csv(path + scene + "dynamic_agents.csv", index_col=0)
+        # num_agents_tracked = 2
+        # starting_col_index = 0
+        # max_steps = 300
+        # estimation_moving_agents = [[0 for _ in range(num_agents_tracked * 2)] * (H+1) for _ in range(max_steps + 10)] 
+
+        # dynamic_agents = prediction_model.create_online_dataset(test_dataset, num_agents_tracked)
+        # for cur_time in range(10, 50):
+        #     estimation = prediction_model.predict(dynamic_agents, cur_time, starting_col_index )
+        #     for i, row in enumerate(estimation):
+        #         estimation_moving_agents[cur_time][i+1] = row
+        #         Y_est = row
+        #         Y_cur = dynamic_agents.loc[cur_time + i + 1,:].values[starting_col_index:]
+        #         estimation_error = prediction_model.compute_prediction_error(Y_cur, Y_est)#
+        #         # print(estimation_error, cur_time, i+1, )
+        #         # print(row)
+        #         print(Y_cur)
+
 if __name__ == "__main__":
     path = './test_data/'
-    scene = "/SDD-deathCircle-video1/"
     history_length = 4
     prediction_length = 3
-    prediction_model = Predictor(history_length, prediction_length)
-    
-    # prediction_model.train(path + scene)
-    # prediction_model.validate(path + scene)
-    prediction_model.load_model(path + scene)
 
-    H = prediction_model.prediction_length
-    test_dataset =  pd.read_csv(path + scene + "dynamic_agents.csv", index_col=0)
-    num_agents_tracked = 2
-    starting_col_index = 0
-    max_steps = 300
-    estimation_moving_agents = [[0 for _ in range(num_agents_tracked * 2)] * (H+1) for _ in range(max_steps + 10)] 
+    for scene in [
+                    # "ETH/", 
+                #   'SDD-bookstore-video1/', 
+                "/SDD-deathCircle-video1/"
+                  ]:
+        print(scene)
+        prediction_model = Predictor(history_length, prediction_length)
+        prediction_model.train_validation(path + scene)
+        # prediction_model.train(path + scene)
+        # prediction_model.load_model(path + scene)
+        # prediction_model.validate(path + scene)
 
-    dynamic_agents = prediction_model.create_online_dataset(test_dataset, num_agents_tracked)
-    for cur_time in range(10, 50):
-        estimation = prediction_model.predict(dynamic_agents, cur_time, starting_col_index )
-        for i, row in enumerate(estimation):
-            estimation_moving_agents[cur_time][i+1] = row
-            Y_est = row
-            Y_cur = dynamic_agents.loc[cur_time + i + 1,:].values[starting_col_index:]
-            estimation_error = prediction_model.compute_prediction_error(Y_cur, Y_est)#
-            # print(estimation_error, cur_time, i+1, )
-            # print(row)
-            print(Y_cur)
