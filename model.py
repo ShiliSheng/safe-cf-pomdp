@@ -569,7 +569,6 @@ def create_scenario_obstacle(minX, minY, maxX, maxY,
                 if prob == 0 or tnode not in robot_nodes: continue
                 robot_edges[(fnode, action, tnode)] = (prob, action_cost)
 
-
     initial_belief = {}
     for state in initial_belief_support:
         initial_belief[state] = 1 / len(initial_belief_support)   
@@ -725,7 +724,6 @@ def test_scenario(pomdp):
     # obs_mdp, Winning_obs, A_valid =
     pomdp.online_compute_winning_region(obs_current_node, AccStates, Avalid_states, observation_successor_map, H, ACP_step, dfa)
 
-    
     # print("+++++++++ Winning Obs")
     # print(Winning_obs)
     # print("obstacle states", pomdp.obstacles)
