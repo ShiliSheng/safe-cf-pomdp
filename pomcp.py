@@ -467,7 +467,6 @@ class POMCP:
     def get_legal_actions(self, state):
         return set(self.pomdp.robot_state_action_map[state].keys())
 
-    
     def step_reward(self, state, actionIndex):
         if state not in self.pomdp.state_action_reward_map:
             return float("-inf")
