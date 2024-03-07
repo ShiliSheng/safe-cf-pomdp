@@ -1,19 +1,8 @@
-from MDP_TG.mdp import Motion_MDP_label, Motion_MDP, compute_accept_states
-from MDP_TG.dra import Dra, Dfa, Product_Dra, Product_Dfa
-from MDP_TG.vi4wr import syn_plan_prefix, syn_plan_prefix_dfa
-from networkx.classes.digraph import DiGraph
 import pickle
 import numpy as np
 import time
 import math
-import copy
 import random
-from plot import plot_figure_from_data
-from preprocess import create_test_dataset
-from model import create_scenario
-from model import Model
-from predictor import Predictor
-from pomcp import POMCP
 from collections import defaultdict
 import pandas as pd
 from itertools import chain
@@ -23,6 +12,15 @@ import os, yaml
 import copy
 from datetime import datetime
 import concurrent.futures
+from MDP_TG.mdp import Motion_MDP_label, Motion_MDP, compute_accept_states
+from MDP_TG.dra import Dra, Dfa, Product_Dra, Product_Dfa
+from MDP_TG.vi4wr import syn_plan_prefix, syn_plan_prefix_dfa
+from plot import plot_figure_from_data
+from preprocess import create_test_dataset, get_max_speed
+from model import create_scenario, Model
+from predictor import Predictor
+from pomcp import POMCP
+from networkx.classes.digraph import DiGraph
 
 def get_min_distance(state_ground_truth, Y_cur_agents):
     cx, cy = state_ground_truth[0], state_ground_truth[1]
@@ -33,17 +31,20 @@ def get_min_distance(state_ground_truth, Y_cur_agents):
         cur_min_distance = min(cur_min_distance, t)
     return cur_min_distance
 
+
+# 0: No shield; 1: ACP shield, 2: Reactive shield, 3: MaxSpeed shield
 def test(scene, shieldLevel, target_failure_prob_delta, prediction_length, history_length = 4,
         num_agents_tracked = 3, num_episodes = 20, max_steps = 200,
         explore_constant = 100, plot_along = False, pomcp_maxDepth = 100, print_along = False,
         pomcp_gamma = 0.99, pomcp_numSimulation = 2 ** 12, pomcp_init_R_max = 0,
-        safe_distance = 0.5
+        safe_distance = 2
         ):
     log_time = f"{datetime.now().strftime('%Y-%m-%d-%H-%M')}"
 
     #Settings for LSTM trajectory prediction
     
-    test_data_path = './test_data/' + scene + "/"
+    test_data_path = f'./test_data/{scene}/'
+    
     prediction_model = Predictor(history_length, prediction_length)
     prediction_model.load_model(test_data_path)
     history_length = prediction_model.history_length
@@ -96,7 +97,13 @@ def test(scene, shieldLevel, target_failure_prob_delta, prediction_length, histo
         Y_cur_agents = [[] * num_agents_tracked]
 
         error = [[0] * (H+1) for _ in range(max_steps + 10)]
-        constraints = [[0] * (H+1) for _ in range(max_steps + 10)]    
+        
+        constraints = [[0] * (H+1) for _ in range(max_steps + 10)]
+        if shieldLevel == 3:
+            max_speed = get_max_speed(test_data_path)
+            constraints = [[max_speed *  h for h in range(H+1)]
+                           for _ in range(max_steps + 10)]
+
         estimation_moving_agents = [ [0 for _ in range(num_agents_tracked * 2)] * (H+1) 
                                     for _ in range(max_steps + 10)] 
         cf_scores = defaultdict(SortedList)         # cf_scores = defaultdict(lambda: SortedList([float('inf')]))
@@ -135,7 +142,7 @@ def test(scene, shieldLevel, target_failure_prob_delta, prediction_length, histo
             }
             step_record.append(data)
 
-            estimation = prediction_model.predict(dynamic_agents, cur_time, starting_col_index, shieldLevel)  # Line 3, 4 
+            estimation = prediction_model.predict(dynamic_agents, cur_time, starting_col_index, shieldLevel, max_speed)  # Line 3, 4 
             # print(estimation, "estimation", len(estimation), len(estimation[0]))
             
             for i, row in enumerate(estimation): estimation_moving_agents[cur_time][i+1] = row
@@ -277,36 +284,18 @@ def test_ETH():
     scene2 = 'ETH'
     plot_along = 0
     print_along = 0
-
-    with concurrent.futures.ProcessPoolExecutor(max_workers=5) as executor:
-        for num_agents_tracked in [15]:
-            executor.submit(
-                test(scene= scene2, shieldLevel = 2, target_failure_prob_delta = 0.1, prediction_length = 3,
-                    history_length = 4,  num_agents_tracked = num_agents_tracked, num_episodes = 100, max_steps = 300, explore_constant = 250,
-                    plot_along = plot_along, pomcp_maxDepth = 200, print_along = print_along, pomcp_gamma = 0.95,
-                    pomcp_numSimulation = 2**12, pomcp_init_R_max = 0, safe_distance = 2,)
-            )
-            # executor.submit(
-            #     test(scene= scene2, shieldLevel = 0, target_failure_prob_delta = 0.1, prediction_length = 3,
-            #         history_length = 4,  num_agents_tracked = num_agents_tracked, num_episodes = 1, max_steps = 300, explore_constant = 250,
-            #         plot_along = plot_along, pomcp_maxDepth = 200, print_along = print_along, pomcp_gamma = 0.95,
-            #         pomcp_numSimulation = 2**12, pomcp_init_R_max = 0, safe_distance = 2,)
-            # )
-            # for alpha in [0.05, 0.1]:
-            #     executor.submit(
-            #         test(scene= scene2, shieldLevel = 0, target_failure_prob_delta = alpha, prediction_length = 3,
-            #             history_length = 4,  num_agents_tracked = num_agents_tracked, num_episodes = 1, max_steps = 300, explore_constant = 250,
-            #             plot_along = plot_along, pomcp_maxDepth = 200, print_along = print_along, pomcp_gamma = 0.95,
-            #             pomcp_numSimulation = 2**12, pomcp_init_R_max = 0, safe_distance = 2,)
-            #     )
-
+    for num_agents_tracked in [15, 20, 25]:
+        test(scene= scene2, shieldLevel = 3, target_failure_prob_delta = 0.1, prediction_length = 3,
+            history_length = 4,  num_agents_tracked = num_agents_tracked, num_episodes = 100, max_steps = 300, explore_constant = 250,
+            plot_along = plot_along, pomcp_maxDepth = 200, print_along = print_along, pomcp_gamma = 0.95,
+            pomcp_numSimulation = 2**12, pomcp_init_R_max = 0, safe_distance = 2,)
 
 def test_bookstore():
     scene2 = 'SDD-bookstore-video1'
     print_along = 0
     plot_along = 0
     for num_agents_tracked in [15, 20, 23]:
-        test(scene= scene2, shieldLevel = 2, target_failure_prob_delta = 0.1, prediction_length = 3,
+        test(scene= scene2, shieldLevel = 3, target_failure_prob_delta = 0.1, prediction_length = 3,
                     history_length = 4,  num_agents_tracked = num_agents_tracked, num_episodes = 100, max_steps = 500, explore_constant = 100,
                     plot_along = plot_along, pomcp_maxDepth = 200, print_along=print_along, pomcp_gamma=0.95,
                     pomcp_numSimulation= 2**12, pomcp_init_R_max = 0, safe_distance = 2
@@ -317,11 +306,13 @@ def test_deathCircle():
     scene2 = 'SDD-deathCircle-video1'
     plot_along = 0
     print_along = 0
-    test(scene= scene2, shieldLevel = 2, target_failure_prob_delta = 0.1, prediction_length = 3,
-                history_length = 4,  num_agents_tracked = 15, num_episodes = 100, max_steps = 500, explore_constant = 20,
-                plot_along = plot_along, pomcp_maxDepth = 200, print_along = print_along, pomcp_gamma = 0.95,
-                pomcp_numSimulation = 2**12, pomcp_init_R_max = 0, safe_distance = 2,
-                )
+    for num_agents_tracked in [24]:
+    # for num_agents_tracked in [15, 20, 24]:
+        test(scene= scene2, shieldLevel = 3, target_failure_prob_delta = 0.1, prediction_length = 3,
+                    history_length = 4,  num_agents_tracked = num_agents_tracked, num_episodes = 100, max_steps = 500, explore_constant = 20,
+                    plot_along = plot_along, pomcp_maxDepth = 200, print_along = print_along, pomcp_gamma = 0.95,
+                    pomcp_numSimulation = 2**12, pomcp_init_R_max = 0, safe_distance = 2,
+                    )
     pass
 
 if __name__ == "__main__":
