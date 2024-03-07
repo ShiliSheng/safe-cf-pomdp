@@ -147,7 +147,7 @@ def preprocess_ETH(ETH_path, file):
     return raw_dataset
 
 def preprocess_SSD(SDD_path, scene_name, scene_video_id, scales_yaml_content):
-    print("processing", SDD_path)
+    print("processing", SDD_path, scene_name)
     raw_data_file_path = "./test_data/SDD-{}-{}/".format(scene_name, scene_video_id)
     scale = scales_yaml_content[scene_name][scene_video_id]['scale']
     print(scale)
@@ -168,7 +168,6 @@ def preprocess_SSD(SDD_path, scene_name, scene_video_id, scales_yaml_content):
     raw_dataset = pd.concat(results, ignore_index=True)
     raw_dataset = raw_dataset[["id", "x", "y"]]
     raw_dataset = reposition(raw_dataset)
-
     os.makedirs(raw_data_file_path, exist_ok=True)
     raw_dataset.to_csv(raw_data_file_path + "rawdata.csv")
     split_train_validation_test(raw_data_file_path)
@@ -220,46 +219,40 @@ def plot_heat_map(data_path = "./test_data/"):
         plt.savefig(file.replace("rawdata.csv", "trajectories.png"), dpi = 300,  transparent=True,  bbox_inches="tight")
 
 def preprocess_dataset():
-    ETH_path = './OpenTraj/datasets/ETH/seq_eth/'
-    preprocess_ETH(ETH_path, file = 'obsmat.txt')
+    # ETH_path = './OpenTraj/datasets/ETH/seq_eth/'
+    # preprocess_ETH(ETH_path, file = 'obsmat.txt')
     SDD_path = "./OpenTraj/datasets/SDD/"
-    for scene_name, scene_video_id in [('deathCircle', 'video1'), ('bookstore', 'video1'), ('hyang', 'video0')]:
+    for scene_name, scene_video_id in [('deathCircle', 'video1'), ('bookstore', 'video1')]:
         scaler_file = os.path.join(SDD_path, 'estimated_scales.yml')
         with open(scaler_file, 'r') as hf:
             scales_yaml_content = yaml.load(hf, Loader=yaml.FullLoader)
         preprocess_SSD(SDD_path, scene_name, scene_video_id, scales_yaml_content)
 
 def copy_and_rename_reference_images(folder_path, destination_path = "./OpenTraj/datasets/SDD/refs/"):
-    # Iterate through all subdirectories
     for root, dirs, files in os.walk(folder_path):
-        # Check if "reference.jpg" is in the files list
         if "reference.jpg" in files:
-            # Get the absolute path of the reference image
             reference_path = os.path.join(root, "reference.jpg")
-
-            # # Extract information from the original path
             new_name = "-".join(reference_path.split("/")).replace(".","") + ".jpg"
-            
-            # # Create a new name based on the original path
-            # new_name = f"reference_{os.path.basename(original_folder)}_{original_filename}"
-            
-            # Copy and rename the file
             new_path = os.path.join(destination_path, new_name)
             if not os.path.exists(new_path): os.path.mkdir(new_path)
             shutil.copy(reference_path, new_path)
 
-def get_max_speed(file):
-    file = './test_data/ETH/rawdata_test.csv'
-    pd.read_csv(file)
+def get_max_speed(path):
+    file = os.path.join(path, "rawdata_train.csv")
+    data = pd.read_csv(file)
+    dif = []
+    for id, group in data.groupby("id"):
+        dif.append(group.x.diff().abs().max())
+        dif.append(group.y.diff().abs().max())
+    return sorted(dif)[int(0.99 * len(dif)) - 1]
 
 if __name__ == "__main__":
-    file = './test_data/ETH/rawdata_test.csv'
-    data = pd.read_csv(file)
-    max_x_diff, max_y_diff = 0, 0
-    for id, group in data.groupby("id"):
-        max_x_diff = max(max_x_diff, group.x.diff().abs().max())
-        max_y_diff = max(max_y_diff, group.y.diff().abs().max())
-    print(max_x_diff, max_y_diff)
+    # scene = 'ETH'
+    s1, s2, s3 = 'ETH', 'SDD-bookstore-video1', 'SDD-deathCircle-video1'
+    for scene in [s1, s2, s3]:
+        test_data_path = f'./test_data/{scene}/'
+        t = get_max_speed(test_data_path)
+        print(t)
     # preprocess_dataset()
     # plot_heat_map(data_path = "./test_data/")
     # raw_dataset_path = './test_data/ETH/'
