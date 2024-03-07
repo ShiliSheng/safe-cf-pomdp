@@ -26,12 +26,18 @@ def get_all_summary(path):
         file = path + experiment_setting + "/summary.csv"
         if not os.path.exists(file): continue
         result = pd.read_csv(file, index_col=0)
-        if result["Shield Level"].iloc[0] == 0:
+        shield_level = result["Shield Level"].iloc[0]
+        if  shield_level== 0:
             result['Method'] = 'No Shield'
-        elif result["Shield Level"].iloc[0] == 1:
-            result['Method'] = 'ACP ({})'.format(result["Failure Rate"].apply(format_number).iloc[0])
-        else:
+        elif shield_level == 1:
+            if result['Failure Rate'].iloc[0] == 0.1:
+                continue
+            result['Method'] = 'ACP'
+        elif shield_level == 2:
             result['Method'] = 'Reactive'
+        else:
+            continue
+            # result['Method'] = 'Max Speed'
         results.append(result)
     r = pd.concat(results, ignore_index = True)
     r.to_csv(path + "all_summary.csv", index=False)
@@ -45,23 +51,33 @@ def format_number(x):
 def get_stat(path):
     r = get_all_summary(path)
     summary_of_summary = []
+    
     for _, df in r.groupby(["Method", "Number of Dynamic Agents"]):
         data ={}
         data["N"] = df["Number of Dynamic Agents"].iloc[0]
         data["Method"] = df["Method"].iloc[0]
         data["P safe"] = df["Percentage of time being safe to dynamic agents"].mean()
-        data['No. Collision']=  df["Number of times being unsafe to static obstacles"].mean()
+        # data['No. Collision']=  df["Number of times being unsafe to static obstacles"].mean()
+
+        
+        # data['file'] = path        
+        # data["Time"] = df['Action Time spent per action in seconds'].mean().round(3)
+        safe_trip = df['Number of times being unsafe to static obstacles'] == 0
+        reached_trip = df['Reached Target'] == 1
+        safe_reach = df.loc[safe_trip & reached_trip, :]
+        data["N_safe_reach"] = len(safe_reach) / len(df)
         data["Reward"] =  df['Cumulative Undiscounted Reward'].mean().round(1)
+
         summary_of_summary.append(pd.DataFrame([data], columns = data.keys()))
     summary = pd.concat(summary_of_summary, ignore_index = True)
     # summary["alpha"] = summary["alpha"].apply(format_number)
     summary["P safe"] = summary["P safe"].apply(format_number)
     # summary = summary.sort_values(by = [ "N"])
     # print(summary.values)
-
+    
     with open(path + 'stat.txt', 'w') as f:
         for n in sorted(summary.N.unique()):
-            for method in ['No Shield', "Reactive", "ACP (0.05)", "ACP (0.1)"]:
+            for method in ['No Shield', "Reactive", "ACP", ]:
                 rows = summary.loc[summary.N==n, :]
                 rows = rows.loc[rows.Method==method, :]
                 for row in rows.values:
@@ -72,24 +88,26 @@ def get_stat(path):
     # with open('merged_cells.txt', 'w') as f:
     #     f.write(latex_table)
     
-    hue_order = ["No Shield", "Reactive", "ACP (0.05)", "ACP (0.1)"]
+    # hue_order = ["No Shield", "Reactive", "Max Speed", "ACP (0.05)", "ACP (0.1)"]
+    hue_order = ["No Shield", "Reactive", "ACP", ]
     x = 'Number of Dynamic Agents'
     hue = 'Method'
 
     y = 'Minimum Distance to Agents'
     boxplot(path, r, x = x, y = y, hue = hue,
             xlabel = 'Number of Pedestrians' , ylabel = 'Minimum Distance (m)', 
-            fig_name = '{}-Distance.jpg'.format(r.loc[0,"Model"]), ncol = 5, hline = 2, hue_order=hue_order)
+            fig_name = '{}-Distance.jpg'.format(r.loc[0,"Model"]), ncol = 4, hline = 2, hue_order=hue_order)
     
     y = 'Cumulative Undiscounted Reward'
     boxplot(path, r, x = x, y = y, hue = hue,
             xlabel = 'Number of Pedestrians' , ylabel = 'Undiscounted Reward', 
-            fig_name = '{}-Undiscounted Reward.jpg'.format(r.loc[0,"Model"]), ncol = 4, hue_order=hue_order)
+            fig_name = '{}-Undiscounted Reward.jpg'.format(r.loc[0,"Model"]), ncol = 3, hue_order=hue_order)
     
     y = 'Cumulative Discounted Reward'
     boxplot(path, r, x = x, y = y, hue = hue,
             xlabel = 'Number of Pedestrians' , ylabel = 'Discounted Reward', 
-            fig_name = '{}-Discounted Reward.jpg'.format(r.loc[0,"Model"]), ncol = 4, hue_order = hue_order)
+            fig_name = '{}-Discounted Reward.jpg'.format(r.loc[0,"Model"]), ncol = 3, hue_order = hue_order)
+    return summary
 
 def t_test(data, x, y, hue):
     p_values = {}
@@ -110,7 +128,8 @@ def perform_one_way_anova(df, x, y, hue, path):
     df = df.rename(columns={y: y.replace(" ", "_")})
     df = df.rename(columns={hue: hue.replace(" ", "_")})
     x, y, hue = x.replace(" ", "_"), y.replace(" ", "_"), hue.replace(" ", "_")
-    formula = f"{y} ~ {x} + C({hue})"
+
+    formula = f"{y} ~ C({x}) + C({hue})"
     model = ols(formula, data=df).fit()
     anova_table = anova_lm(model, typ=2)
     tukey_result = pairwise_tukeyhsd(df[y], df[hue])
@@ -127,15 +146,16 @@ def boxplot(path, dataframe, x, y, hue, xlabel, ylabel, fig_name, ncol = 1, hlin
 
     custom_palette = {"No Shield": (206/255, 170/255, 210/255),
                    "Reactive": (110/255, 156/255, 114/255), 
-                   "ACP (0.05)": (213/255, 159/255, 63/255), 
-                   "ACP (0.1)": (95/255, 116/255, 160/255),
+                   "ACP": (213/255, 159/255, 63/255), 
+                #    "ACP (0.1)": (95/255, 116/255, 160/255),
+                #    "Max Speed": (195/255, 116/255, 160/255),
                   }
     plt.rcParams['font.family'] = 'Times New Roman'
     plt.rcParams['font.size'] = 13
-    plt.figure(figsize=(6, 4))
+    plt.figure(figsize=(5, 4))
     box_plot = sns.boxplot(data = dataframe, x = x, y = y, hue = hue, 
                            hue_order = hue_order, 
-                           width = 0.6, 
+                           width = 0.5, 
                            palette=custom_palette, linewidth = 0.6,
                            fliersize=0.5
                            )
@@ -156,8 +176,8 @@ def boxplot(path, dataframe, x, y, hue, xlabel, ylabel, fig_name, ncol = 1, hlin
                             loc='upper center', 
                              bbox_to_anchor=(0.5, 1.15 ), 
                              ncol = ncol,
-                             columnspacing = 0.5,
-                             handletextpad=0.2,
+                             columnspacing = 1.2,
+                             handletextpad=0.4,
                             handlelength = 0.7)
     legend.get_frame().set_facecolor('none')  # Set legend background color
     legend.get_frame().set_linewidth(0)        # Remove legend border
@@ -299,13 +319,17 @@ def get_statistics(path):
 
 if __name__ == "__main__":
     t = "_0126_good"
+    # t = ""
     ETH_path = './results{}/Obstacle-ETH-0-0-22-22/'.format(t)
     death = "./results{}/Obstacle-SDD-deathCircle-video1-0-0-50-60/".format(t)
     bookstore ="./results{}/Obstacle-SDD-bookstore-video1-0-0-50-45/".format(t)
-    get_stat(ETH_path)
-    get_stat(death)
-    get_stat(bookstore)
-
+    s1 = get_stat(ETH_path)
+    s2 = get_stat(death)
+    s3 = get_stat(bookstore)
+    s = pd.concat([s1, s2, s3])
+    # print(s)
+    # for _, df in s.groupby("Method"):
+    #     print(df.Method.unique(), df.Time.mean())
     # ETH_path = './results/Obstacle-ETH-0-0-22-22/'
     # get_stat(ETH_path)
     # get_statistics(path = )
