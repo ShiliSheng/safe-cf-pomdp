@@ -109,7 +109,11 @@ class Model:
         for node in motion_mdp.nodes():
             self.successor_mdp[node]= motion_mdp.successors(node)
 
-        Sf = compute_accept_states(motion_mdp, self.obstacles, self.targets)
+        obstacles = []
+        targets = motion_mdp.nodes()
+        Sf = compute_accept_states(motion_mdp, obstacles, targets)
+        
+        # Sf = compute_accept_states(motion_mdp, self.obstacles, self.targets)
         # prob 1 to reach target and avoid obstacles
         
         # print("Sf------------")
