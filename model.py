@@ -14,8 +14,8 @@ from collections import defaultdict
 import numpy as np
 import copy
 import matplotlib.pyplot as plt
-def print(*args, **kwargs):
-    return
+# def print(*args, **kwargs):
+#     return
 
 class Model:
     def __init__(self, robot_nodes, actions, robot_edges, cost, initial_belief,
@@ -109,6 +109,7 @@ class Model:
         for node in motion_mdp.nodes():
             self.successor_mdp[node]= motion_mdp.successors(node)
 
+        # Sf = compute_accept_states(motion_mdp, self.obstacles, self.targets)
         obstacles = []
         targets = motion_mdp.nodes()
         Sf = compute_accept_states(motion_mdp, obstacles, targets)
@@ -144,7 +145,7 @@ class Model:
         sets_list = [] 
         for state in state_set:
             obs_set = self.state_observation_map_dict_new[(state, oc)]
-            print(obs_set)
+            # print(obs_set)
             sets_list.append(obs_set) 
         common_obs = set.intersection(*sets_list)
         print("Common observation: %s" %common_obs)
@@ -205,7 +206,8 @@ class Model:
         obstacle_static = set(self.obstacles)
         obstacle_new = dict()
         for i in range(H):
-            obstacle_new[i+1] = obstacle_static.union(ACP[i+1])
+            # obstacle_new[i+1] = obstacle_static.union(ACP[i+1])
+            obstacle_new[i+1] = ACP[i+1]
 
         #----add time counter----
         SS = dict()
@@ -502,7 +504,10 @@ class Model:
                         queue.append(nxt)
                         visited.add(nxt)
         
-    def build_restrictive_region(self, estimations, radius_set, H, safeDistance = 0):
+    def build_restrictive_region(self, estimations, radius_set, H, safeDistance = 0, shieldLevel = 0):
+        if shieldLevel == 0:
+            return defaultdict(list)
+        
         ACP = defaultdict(list)
         dx = 1
         dy = 1
@@ -517,7 +522,6 @@ class Model:
                         if (nx, ny) in self.robot_state_action_map and (nx-x)**2 + (ny-y)** 2 < radius ** 2:
                             ACP[tau].append((nx, ny))
         return ACP
-
 
 def compute_dfa():
     #----compute DFA----
@@ -602,32 +606,35 @@ def create_scenario_obstacle(minX, minY, maxX, maxY,
 def create_scenario(scene):
     # U = actions = ['N', 'S', 'E', 'W']
     state_reward = defaultdict(int)
-
+    
     if scene == 'ETH':
-        minX, minY, maxX, maxY = 0, 0, 22 , 22
-        initial_belief_support = [(0, 0)]
+        minX, minY, maxX, maxY = 0, 0, 20, 20
+        initial_belief_support = [(minX, minY)]
         targets = set()
-        targets.add((20, 22))
+        targets.add((maxX, maxY))
         end_states = set(list(targets))
         obstacles = set()
         preferred_actions = [0, 2]
-        for x in range(6, maxX - 5):
-            obstacles.add((x, 3))
-            obstacles.add((x, 19))
-        
-        for x in [5, maxX - 5]:
-            for y in range(0, 4):
-                obstacles.add((x, y))
-                obstacles.add((x, maxY - y))
-            
-        for y in range(7, 16, 4):
-            obstacles.add((5, y))
-            obstacles.add((maxX-5, y))
-
         for state in targets:
             state_reward[state] += 1000
         for state in obstacles:
             state_reward[state] += -10
+
+    # if scene == 'ETH':
+    #     minX, minY, maxX, maxY = 0, 0, 36, 36
+    #     initial_belief_support = [(0, 0)]
+    #     targets = set()
+    #     targets.add((maxX, maxY))
+    #     end_states = set(list(targets))
+    #     obstacles = set()
+    #     preferred_actions = [0, 2]
+    #     for y in range(3, maxY, 5):
+    #         obstacles.add((6, y))
+    #         obstacles.add((maxX-6, y))
+    #     for state in targets:
+    #         state_reward[state] += 1000
+    #     for state in obstacles:
+    #         state_reward[state] += -10
 
     if scene == 'SDD-bookstore-video1':
         minX, minY, maxX, maxY = 0, 0, 50, 45
@@ -641,23 +648,16 @@ def create_scenario(scene):
                 obstacles.add((x, y))
             for y in range(25, 34, 1):
                 obstacles.add((x, y))
-
         for y in range(maxY - 5, maxY + 1):
             for x in range(25, maxX + 1):
                 obstacles.add((x, y))
-        # for y in [12, 28]:
-        #     end = 60 if y < 80 else maxX
-        #     for x in range(30, end - 10):
-        #         obstacles.add((x, y))
         ob = []
         for x in range(10, maxX):
             for y in range(10, maxY):
                 ob.append((x, y))
-
         random.seed(42)
         for (x, y) in random.choices(ob, k = 10):
             obstacles.add((x, y))   
-
         for state in targets:
             state_reward[state] += 1000
         for state in obstacles:
@@ -665,22 +665,18 @@ def create_scenario(scene):
 
     if scene == 'SDD-deathCircle-video1':
         minX, minY, maxX, maxY = 0, 0, 50, 60
-        # [NSEW]
         preferred_actions = [0, 3]
         # targets = set([(30, maxY//2), (30, maxY//2-1), (30-1, maxY//2), (30-1, maxY//2-1), ])
         initial_belief_support = [(maxX, 20)]
         targets = set([(0, maxY)])
         end_states = set(list(targets))
         obstacles = set()
-        
         for x in range(5):
             for y in range(5):
                 obstacles.add((x, y))
-        
         for x in range(45, maxX + 1):
             for y in range(55, maxY + 1):
                 obstacles.add((x, y))
-        
         ob  = []
         for x in range(40):
             for y in range(20, 50):
@@ -688,7 +684,6 @@ def create_scenario(scene):
         random.seed(42)
         for (x, y) in random.choices(ob, k = 10):
             obstacles.add((x, y))
-
         for state in targets:
             state_reward[state] += 1000
         for state in obstacles:
@@ -703,7 +698,6 @@ def create_scenario(scene):
                              targets, end_states,
                              obstacles, scene, preferred_actions,
                              state_reward)
-    print("==", pomdp.obstacles)
     pomdp.write_model()
     return pomdp
 
@@ -715,42 +709,29 @@ def test_scenario(pomdp):
     observation_successor_map = pomdp.compute_H_step_space(H)
 
     obs_current_node = pomdp.state_observation_map[pomdp.initial_belief_support[0]]
-    ACP_step = defaultdict(list)
-    # ACP_step[1] =  [(5, 5), (5, 9)]
-    # ACP_step[2] =  [(5, 5), (5, 9)]
-    # ACP_step[3] =  [(5, 5), (5, 9)]
-
-    ACP_step = {1: [(15, 8), (15, 9), (15, 10), (16, 8), (16, 9), (16, 10), (17, 8), (17, 9), (17, 10), (11, 10), (11, 11), (12, 9), (12, 10), (12, 11), (12, 12), (13, 10), (13, 11), (13, 12), (13, 8), (13, 9), (14, 7), (14, 8), (14, 9), (15, 8), (15, 9), (20, 8), (20, 9), (20, 10), (21, 8), (21, 9), (21, 10), (22, 9), (22, 10), (11, 6), (11, 7), (12, 5), (12, 6), (12, 7), (13, 5), (13, 6), (13, 7)], 
-                2: [(14, 8), (14, 9), (15, 8), (15, 9), (15, 10), (16, 8), (16, 9), (16, 10), (17, 8), (17, 9), (17, 10), (11, 9), (11, 10), (11, 11), (11, 12), (12, 9), (12, 10), (12, 11), (12, 12), (13, 10), (13, 11), (13, 12), (12, 8), (12, 9), (13, 7), (13, 8), (13, 9), (13, 10), (14, 7), (14, 8), (14, 9), (14, 10), (15, 8), (15, 9), (19, 9), (20, 8), (20, 9), (20, 10), (21, 8), (21, 9), (21, 10), (21, 11), (22, 8), (22, 9), (22, 10), (10, 6), (11, 5), (11, 6), (11, 7), (12, 5), (12, 6), (12, 7), (12, 8), (13, 5), (13, 6), (13, 7)],
-                3: [(14, 8), (14, 9), (14, 10), (15, 7), (15, 8), (15, 9), (15, 10), (16, 8), (16, 9), (16, 10), (17, 9), (10, 10), (10, 11), (10, 12), (11, 9), (11, 10), (11, 11), (11, 12), (12, 9), (12, 10), (12, 11), (12, 12), (13, 10), (13, 11), (11, 8), (12, 7), (12, 8), (12, 9), (12, 10), (13, 7), (13, 8), (13, 9), (13, 10), (14, 7), (14, 8), (14, 9), (14, 10), (15, 8), (19, 9), (20, 8), (20, 9), (20, 10), (20, 11), (21, 8), (21, 9), (21, 10), (21, 11), (22, 8), (22, 9), (22, 10), (22, 11), (10, 5), (10, 6), (10, 7), (11, 5), (11, 6), (11, 7), (11, 8), (12, 5), (12, 6), (12, 7), (12, 8), (13, 5), (13, 6), (13, 7)]}
+    # ACP_step = defaultdict(list)
+    ACP_step =  {1: [(6, 5), (6, 6), (6, 7), (6, 8), (7, 4), (7, 5), (7, 6), (7, 7), (7, 8), (7, 9), (8, 4), (8, 5), (8, 6), (8, 7), (8, 8), (8, 9), (9, 4), (9, 5), (9, 6), (9, 7), (9, 8), (9, 9), (10, 4), (10, 5), (10, 6), (10, 7), (10, 8), (10, 9), (11, 5), (11, 6), (11, 7), (11, 8)], 2: [(5, 6), (5, 7), (6, 5), (6, 6), (6, 7), (6, 8), (6, 9), (7, 4), (7, 5), (7, 6), (7, 7), (7, 8), (7, 9), (8, 4), (8, 5), (8, 6), (8, 7), (8, 8), (8, 9), (9, 4), (9, 5), (9, 6), (9, 7), (9, 8), (9, 9), (10, 5), (10, 6), (10, 7), (10, 8), (10, 9), (11, 6), (11, 7)], 3: [(5, 5), (5, 6), (5, 7), (5, 8), (6, 4), (6, 5), (6, 6), (6, 7), (6, 8), (6, 9), (7, 4), (7, 5), (7, 6), (7, 7), (7, 8), (7, 9), (8, 4), (8, 5), (8, 6), (8, 7), (8, 8), (8, 9), (9, 4), (9, 5), (9, 6), (9, 7), (9, 8), (9, 9), (10, 5), (10, 6), (10, 7), (10, 8)]}
     dfa = compute_dfa()  
     
     # obs_mdp, Winning_obs, A_valid =
-    pomdp.online_compute_winning_region(obs_current_node, AccStates, Avalid_states, observation_successor_map, H, ACP_step, dfa)
+    Winning_obs = pomdp.online_compute_winning_region(obs_current_node, AccStates, Avalid_states, observation_successor_map, H, ACP_step, dfa)
 
-    # print("+++++++++ Winning Obs")
-    # print(Winning_obs)
-    # print("obstacle states", pomdp.obstacles)
-    # print(pomdp.targets)
-    # print(pomdp.state_reward)
+    print("+++++++++ Winning Obs")
+    print(Winning_obs)
+    for tau in range(1, H + 1):
+        for state in ACP_step[tau]:
+            if (pomdp.check_winning_set([state], tau)):
+                print("error state should not be winning region", state)
     # for obstacle in pomdp.obstacles:
     #     for i in range(1, H+1):
     #         obs_obstacle = pomdp.state_observation_map.get(obstacle, (-1, -1))
-    #         if ((obs_obstacle), i ) in Winning_obs:
-    #             print("error static obstacle in Winning Region", (obstacle, i))
-
-    # for i in range(1, H+1):
-    #     for obstacle in ACP_step[i]:
-    #         if ((obstacle), i ) in Winning_obs:
-    #             print("error dynamic obstacle in Winning Region", (obstacle, i))
+    #         if ((obs_obstacle), i ) not in Winning_obs:
+    #             print("error static obstacle not  in Winning Region", (obstacle, i))
 
 if __name__ == "__main__":
-    # pomdp = create_scenario("ETH")
-    pomdp = create_scenario("SDD-bookstore-video1")
-    # pomdp = create_scenario("SDD-deathCircle-video1")
+    pomdp = create_scenario("ETH")
     test_scenario(pomdp)
-    s = {(3, 18), (2, 18), (2, 19)}
-    result = pomdp.check_winning_set(s, 1)
-    print(result)
-    #pomdp.plot_map(True)
+    # pomdp = create_scenario("SDD-bookstore-video1")
+    # pomdp = create_scenario("SDD-deathCircle-video1")
+    # pomdp.plot_map(True)
     pass
