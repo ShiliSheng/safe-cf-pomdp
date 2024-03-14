@@ -208,6 +208,7 @@ class Model:
         for i in range(H):
             # obstacle_new[i+1] = obstacle_static.union(ACP[i+1])
             obstacle_new[i+1] = ACP[i+1]
+        print("ACP induced obstacles %s" %obstacle_new)
 
         #----add time counter----
         SS = dict()
@@ -231,7 +232,7 @@ class Model:
                     support_set_count.add(fnode_count)
                 SS[oc] = support_set.intersection(obstacle_new[oc])
                 o_node_not_obstacle = support_set.difference(SS[oc])
-                SS_target = support_set.intersection(AccStates)
+                SS_target = o_node_not_obstacle.intersection(AccStates)
                 o_node_not_target = o_node_not_obstacle.difference(SS_target)
                 SS_count = set()
                 SS_target_count = set()
@@ -721,7 +722,7 @@ def test_scenario(pomdp):
     for tau in range(1, H + 1):
         for state in ACP_step[tau]:
             if (pomdp.check_winning_set([state], tau)):
-                print("error state should not be winning region", state)
+                print("error state should not be winning region", ([state], tau))
     # for obstacle in pomdp.obstacles:
     #     for i in range(1, H+1):
     #         obs_obstacle = pomdp.state_observation_map.get(obstacle, (-1, -1))
