@@ -14,8 +14,8 @@ from collections import defaultdict
 import numpy as np
 import copy
 import matplotlib.pyplot as plt
-# def print(*args, **kwargs):
-#     return
+def print(*args, **kwargs):
+    return
 
 class Model:
     def __init__(self, robot_nodes, actions, robot_edges, cost, initial_belief,
@@ -608,34 +608,34 @@ def create_scenario(scene):
     # U = actions = ['N', 'S', 'E', 'W']
     state_reward = defaultdict(int)
     
-    if scene == 'ETH':
-        minX, minY, maxX, maxY = 0, 0, 20, 20
-        initial_belief_support = [(minX, minY)]
-        targets = set()
-        targets.add((maxX, maxY))
-        end_states = set(list(targets))
-        obstacles = set()
-        preferred_actions = [0, 2]
-        for state in targets:
-            state_reward[state] += 1000
-        for state in obstacles:
-            state_reward[state] += -10
-
-    # if scene == 'ETH':
-    #     minX, minY, maxX, maxY = 0, 0, 36, 36
-    #     initial_belief_support = [(0, 0)]
+    # if scene == 'ETH': # for demo only
+    #     minX, minY, maxX, maxY = 0, 0, 23, 12
+    #     initial_belief_support = [(minX, minY)]
     #     targets = set()
     #     targets.add((maxX, maxY))
     #     end_states = set(list(targets))
     #     obstacles = set()
     #     preferred_actions = [0, 2]
-    #     for y in range(3, maxY, 5):
-    #         obstacles.add((6, y))
-    #         obstacles.add((maxX-6, y))
     #     for state in targets:
     #         state_reward[state] += 1000
     #     for state in obstacles:
     #         state_reward[state] += -10
+
+    if scene == 'ETH':
+        minX, minY, maxX, maxY = 0, 0, 36, 36
+        initial_belief_support = [(0, 0)]
+        targets = set()
+        targets.add((maxX, maxY))
+        end_states = set(list(targets))
+        obstacles = set()
+        preferred_actions = [0, 2]
+        for y in range(3, maxY, 5):
+            obstacles.add((6, y))
+            obstacles.add((maxX-6, y))
+        for state in targets:
+            state_reward[state] += 1000
+        for state in obstacles:
+            state_reward[state] += -10
 
     if scene == 'SDD-bookstore-video1':
         minX, minY, maxX, maxY = 0, 0, 50, 45
